@@ -1,0 +1,108 @@
+{
+  "name": "toku-rpc",
+  "version": "0.1.0-beta",
+  "description": "특촬 스트리밍(東映特撮ファンクラブ / TSUBURAYA IMAGINATION) Discord Rich Presence + 정주행 기록",
+  "main": "src/main.js",
+  "author": "TOKU RPC",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/paeaenteom/tokusatsu-rpc-app"
+  },
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder --win --publish never",
+    "build:mac": "electron-builder --mac --publish never",
+    "build:all": "electron-builder --win --mac --publish never",
+    "publish": "electron-builder --win --publish never",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "build": {
+    "appId": "com.ttfc.viewer",
+    "productName": "TOKU RPC",
+    "protocols": [
+      {
+        "name": "TOKU RPC",
+        "schemes": [
+          "ttfc"
+        ]
+      }
+    ],
+    "copyright": "Copyright © 2026 TOKU RPC",
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json",
+      "!src/secrets.local.json",
+      "!src/_unused/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "artifactName": "TOKU-RPC-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "TOKU RPC"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png",
+      "artifactName": "TOKU-RPC-${version}-${arch}.${ext}",
+      "category": "public.app-category.entertainment",
+      "darkModeSupport": true,
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "title": "TOKU RPC ${version}",
+      "artifactName": "TOKU-RPC-${version}-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "TOKU-RPC-Portable-${version}.${ext}"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "paeaenteom",
+      "repo": "ttfc_app",
+      "releaseType": "release"
+    }
+  },
+  "dependencies": {
+    "discord-rpc": "^4.0.1",
+    "electron-log": "^5.1.1",
+    "electron-store": "^8.1.0",
+    "electron-updater": "^6.1.7",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^28.1.0",
+    "electron-builder": "^24.9.1"
+  }
+}

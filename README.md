@@ -1,0 +1,139 @@
+# TOKU RPC
+
+특촬 스트리밍 시청 정보를 **Discord 프로필에 표시**하고, **정주행 기록**을 남기는 도구.
+
+지원 사이트
+- 東映特撮ファンクラブ (TTFC) — `pc.tokusatsu-fc.jp`
+- TSUBURAYA IMAGINATION — `imagination.m-78.jp`
+
+> **beta 0.1** — 개인용으로 만든 도구입니다. 버그가 있을 수 있어요.
+
+---
+
+## 설치
+
+릴리스에서 **`install.bat`** 하나만 받아서 더블클릭하면 끝입니다.
+
+1. 앱을 자동으로 설치합니다
+2. 크롬 확장을 자동으로 등록합니다 (관리자 권한 불필요)
+3. 앱을 실행합니다
+
+설치 후 **크롬을 완전히 종료했다가 다시 켜주세요.** (트레이 아이콘까지 닫아야 확장이 적용됩니다)
+
+<details>
+<summary>확장이 자동으로 안 잡힐 때 (수동 설치)</summary>
+
+1. 릴리스에서 `toku-rpc-extension.zip` 을 받아 압축을 풉니다
+2. `chrome://extensions` 접속 → 우측 상단 **개발자 모드** 켜기
+3. **압축해제된 확장 프로그램을 로드** → 압축 푼 폴더 선택
+
+</details>
+
+---
+
+## 쓰는 법
+
+앱을 켜두고 지원 사이트에서 영상을 보면 됩니다. 나머지는 자동입니다.
+
+- 시청 중에는 **작품명 · 에피소드 · 진행 시간 · 썸네일**이 Discord에 표시됩니다
+- 둘러보는 중에는 페이지 종류(작품 페이지 · 시리즈 목록 등)가 표시됩니다
+- 앱은 트레이에 상주하며, PC를 켜면 자동으로(창 없이) 실행됩니다
+  - 트레이 아이콘 우클릭에서 RPC 켜기/끄기, 자동 시작 끄기 가능
+
+### 정주행 모드
+
+확장 아이콘을 눌러 **정주행 모드**를 켜면:
+
+- 영상이 **끝까지 재생되면** 자동으로 다음 화로 넘어갑니다
+- 전체화면으로 보고 있었다면 다음 화에서도 **전체화면을 유지**합니다
+- 에피소드마다 Discord 웹훅으로 **시청 기록**을 남깁니다 (아래 설정 필요)
+- 마지막 화까지 보면 "정주행 끝" 기록을 남기고 자동으로 꺼집니다
+
+> **일시정지는 정주행을 끝내지 않습니다.** 잠깐 멈추든, 탭을 옮기든, 한참 뒤에 이어보든
+> 정주행 모드는 그대로 유지됩니다. 종료는 *마지막 화 완주* 또는 *직접 토글 OFF* 뿐입니다.
+
+---
+
+## 정주행 기록(웹훅) 설정 — 선택
+
+정주행 기록을 Discord 채널에 남기고 싶다면, **본인의 웹훅 주소**를 등록하세요.
+(등록하지 않아도 나머지 기능은 모두 정상 동작합니다.)
+
+1. Discord에서 기록을 남길 채널 → **채널 편집 → 연동 → 웹후크 → 새 웹후크** → URL 복사
+2. 아래 경로에 `secrets.json` 파일을 만들고 URL을 넣습니다
+
+```
+%APPDATA%\toku-rpc\secrets.json
+```
+
+```json
+{
+  "bingeWebhookUrl": "여기에_복사한_웹훅_URL"
+}
+```
+
+3. 앱을 다시 실행합니다
+
+> 이 파일은 **본인 PC에만** 저장되며 저장소·설치 파일에는 포함되지 않습니다.
+> 웹훅 URL은 비밀번호와 같습니다. 아는 사람은 누구나 그 채널에 글을 쓸 수 있으니
+> 공개된 곳(스크린샷·저장소 등)에 올리지 마세요.
+
+<details>
+<summary>Discord 애플리케이션을 직접 쓰고 싶다면</summary>
+
+기본값으로 제작자의 Discord 애플리케이션을 사용합니다(표시 이름 `TTFC` / `IMAGINATION`).
+본인 애플리케이션으로 바꾸려면 같은 `secrets.json` 에 추가하세요.
+
+```json
+{
+  "discordAppIds": { "ttfc": "앱ID", "imagination": "앱ID" }
+}
+```
+
+이 경우 [Discord Developer Portal](https://discord.com/developers/applications) 의
+**Rich Presence → Art Assets** 에 아래 이름으로 이미지를 올려야 합니다.
+
+| 앱 | 필요한 에셋 |
+|---|---|
+| TTFC | `ttfc_logo`, `play`, `pause`, `kamen_rider_logo`, `super_sentai_series_logo`, `metal_hero_series_logo`, `project_r_e_d_logo` |
+| IMAGINATION | `tsuburaya_imagination_logo`, `play`, `pause` |
+
+</details>
+
+---
+
+## 구성
+
+```
+ttfc-app/           Electron 앱 — Discord RPC 송출, 정주행 기록, 트레이 상주
+ttfc-chrome-ext/    크롬 확장 — 사이트에서 시청 정보 추출
+tools/              설치 스크립트 · 릴리스 빌드 스크립트
+```
+
+앱과 확장은 로컬 WebSocket(`127.0.0.1:7690`)으로만 통신합니다.
+시청 정보가 외부로 나가는 곳은 **Discord**와, 설정했다면 **본인 웹훅 채널**뿐입니다.
+
+### 직접 빌드
+
+```powershell
+cd ttfc-app; npm install          # 최초 1회
+powershell -File tools\build-release.ps1
+```
+
+`dist-release\` 에 설치 프로그램 · 확장(CRX/ZIP) · `update.xml` · 설치 스크립트가 생성됩니다.
+
+> 확장 서명키 `ttfc-chrome-ext-key.pem` 은 저장소에 없습니다.
+> 이 키가 확장 ID를 결정하므로 **잃어버리면 기존 사용자의 자동 업데이트가 끊깁니다.**
+
+---
+
+## 알아둘 점
+
+- Windows 전용입니다 (Electron 기준으로는 macOS 빌드도 가능하지만 검증하지 않았습니다)
+- IMAGINATION 썸네일은 사이트가 외부 접근을 막아 Discord가 직접 불러오지 못합니다.
+  그래서 이미지를 임시 호스트에 올려 표시합니다 (litterbox → uguu 순으로 시도)
+- 이 도구는 시청 정보를 표시할 뿐, 영상을 내려받거나 저작권 보호를 우회하지 않습니다
+
+## 라이선스
+
+MIT

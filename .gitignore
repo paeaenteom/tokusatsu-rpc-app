@@ -1,0 +1,17 @@
+# 의존성 / 빌드 산출물
+node_modules/
+dist/
+dist-release/
+*.log
+
+# 개인 설정값 — 웹훅 주소 등 (절대 커밋 금지)
+secrets.local.json
+secrets.json
+
+# 확장 서명키 — 유출되면 남이 같은 ID로 배포할 수 있고,
+# 잃어버리면 기존 사용자의 자동 업데이트가 끊긴다
+*.pem
+
+# OS
+.DS_Store
+Thumbs.db

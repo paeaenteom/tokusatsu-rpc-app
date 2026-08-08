@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TOKU RPC</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel2: #1c2128;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --green: #3fb950;
+    --red: #f85149;
+    --accent: #58a6ff;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', -apple-system, sans-serif;
+    font-size: 13px;
+    padding: 14px;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .header {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 14px;
+  }
+  .header .logo { font-size: 22px; }
+  .header h1 { font-size: 15px; font-weight: 700; }
+  .header .ver { font-size: 10px; color: var(--text-dim); margin-left: auto; }
+
+  .status-row {
+    display: flex; gap: 8px; margin-bottom: 12px;
+  }
+  .status-card {
+    flex: 1; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px; display: flex; align-items: center; gap: 8px;
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.off { background: var(--red); }
+  .status-card .label { font-size: 11px; color: var(--text-dim); }
+  .status-card .value { font-size: 12px; font-weight: 600; }
+
+  .section-title {
+    font-size: 11px; color: var(--text-dim); text-transform: uppercase;
+    letter-spacing: 0.5px; margin: 14px 0 8px;
+  }
+
+  /* 현재 RPC 표시 카드 (Discord 스타일) */
+  .rpc-preview {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px; display: flex; gap: 12px;
+    min-height: 76px; align-items: center;
+  }
+  .rpc-preview .thumb {
+    width: 60px; height: 60px; border-radius: 8px; background: var(--panel2);
+    object-fit: cover; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px; color: var(--text-dim);
+  }
+  .rpc-preview .info { flex: 1; min-width: 0; }
+  .rpc-preview .info .app { font-size: 11px; color: var(--text-dim); margin-bottom: 2px; }
+  .rpc-preview .info .details { font-weight: 700; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rpc-preview .info .state { font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rpc-preview .info .time { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .rpc-preview.empty .info { color: var(--text-dim); font-style: italic; }
+
+  /* 설정 토글 */
+  .settings { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 4px; }
+  .toggle-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 10px; border-radius: 6px;
+  }
+  .toggle-row:hover { background: var(--panel2); }
+  .toggle-row .name { font-size: 12px; }
+  .switch { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; inset: 0; background: var(--border);
+    border-radius: 20px; transition: .2s; cursor: pointer;
+  }
+  .slider::before {
+    content: ''; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px;
+    background: #fff; border-radius: 50%; transition: .2s;
+  }
+  input:checked + .slider { background: var(--green); }
+  input:checked + .slider::before { transform: translateX(16px); }
+
+  /* 시간 모드 셀렉트 */
+  .select-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 10px;
+  }
+  select {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 8px; font-size: 12px;
+  }
+
+  /* 메인 토글 (RPC ON/OFF) */
+  .main-toggle {
+    width: 100%; margin-top: 14px; padding: 12px;
+    border: none; border-radius: 8px; font-size: 14px; font-weight: 700;
+    cursor: pointer; transition: .2s;
+  }
+  .main-toggle.on { background: var(--green); color: #fff; }
+  .main-toggle.off { background: var(--panel2); color: var(--text-dim); border: 1px solid var(--border); }
+
+  .btn-row { display: flex; gap: 8px; margin-top: 8px; }
+  .btn {
+    flex: 1; padding: 8px; background: var(--panel2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; font-size: 12px;
+    cursor: pointer; transition: .2s;
+  }
+  .btn:hover { background: var(--border); }
+
+  /* 콘솔 */
+  .console-head { display: flex; align-items: center; }
+  .console-head .section-title { margin: 14px 0 8px; flex: 1; }
+  .console-head .mini-btn {
+    background: none; border: none; color: var(--text-dim); cursor: pointer;
+    font-size: 11px; padding: 2px 6px;
+  }
+  .console-head .mini-btn:hover { color: var(--text); }
+  .console {
+    background: #010409; border: 1px solid var(--border); border-radius: 8px;
+    height: 150px; overflow-y: auto; padding: 6px 8px;
+    font-family: Consolas, 'Courier New', monospace; font-size: 10.5px;
+    line-height: 1.5; user-select: text; -webkit-user-select: text;
+  }
+  .console .ln { white-space: pre-wrap; word-break: break-all; }
+  .console .lv-info  { color: #8b949e; }
+  .console .lv-warn  { color: #d29922; }
+  .console .lv-error { color: #f85149; }
+  .console .ts { color: #3d444d; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <span class="logo">🎬</span>
+    <h1>TOKU RPC</h1>
+    <span class="ver" id="ver">v4.2.1</span>
+  </div>
+
+  <div class="status-row">
+    <div class="status-card">
+      <div class="dot off" id="extDot"></div>
+      <div>
+        <div class="label">크롬 확장</div>
+        <div class="value" id="extStatus">대기 중</div>
+      </div>
+    </div>
+    <div class="status-card">
+      <div class="dot off" id="dcDot"></div>
+      <div>
+        <div class="label">Discord</div>
+        <div class="value" id="dcStatus">연결 안 됨</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">현재 표시 중</div>
+  <div class="rpc-preview empty" id="preview">
+    <div class="thumb" id="prevThumb">?</div>
+    <div class="info">
+      <div class="app" id="prevApp">TOKU RPC</div>
+      <div class="details" id="prevDetails">표시 중인 내용 없음</div>
+      <div class="state" id="prevState"></div>
+      <div class="time" id="prevTime"></div>
+    </div>
+  </div>
+
+  <div class="section-title">RPC 표시 설정</div>
+  <div class="settings">
+    <div class="toggle-row">
+      <span class="name">작품명 표시</span>
+      <label class="switch"><input type="checkbox" id="showSeries" checked><span class="slider"></span></label>
+    </div>
+    <div class="toggle-row">
+      <span class="name">에피소드 표시</span>
+      <label class="switch"><input type="checkbox" id="showEpisode" checked><span class="slider"></span></label>
+    </div>
+    <div class="toggle-row">
+      <span class="name">썸네일 표시</span>
+      <label class="switch"><input type="checkbox" id="showThumbnail" checked><span class="slider"></span></label>
+    </div>
+    <div class="toggle-row">
+      <span class="name">버튼 표시</span>
+      <label class="switch"><input type="checkbox" id="showButtons" checked><span class="slider"></span></label>
+    </div>
+    <div class="select-row">
+      <span class="name">시간 표시</span>
+      <select id="timeMode">
+        <option value="progress">경과 + 남은 시간</option>
+        <option value="remaining">남은 시간만</option>
+        <option value="none">표시 안 함</option>
+      </select>
+    </div>
+  </div>
+
+  <button class="main-toggle on" id="mainToggle">RPC 켜짐</button>
+  <div class="btn-row">
+    <button class="btn" id="reconnectBtn">🔁 Discord 재연결</button>
+  </div>
+
+  <div class="console-head">
+    <div class="section-title">콘솔</div>
+    <button class="mini-btn" id="consoleCopyBtn">복사</button>
+    <button class="mini-btn" id="consoleClearBtn">지우기</button>
+  </div>
+  <div class="console" id="console"></div>
+
+<script src="rpc-window.js"></script>
+</body>
+</html>

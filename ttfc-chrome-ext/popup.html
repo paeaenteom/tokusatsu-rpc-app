@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  width: 280px; padding: 16px;
+  background: #0D0D1A; color: #E8F5E9;
+  font-family: 'Segoe UI', sans-serif; font-size: 13px;
+}
+.header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.header h1 { font-size: 15px; font-weight: 700; color: #4CAF50; }
+.status {
+  padding: 10px 12px; border-radius: 8px; margin-bottom: 10px;
+  font-size: 12px; display: flex; align-items: center; gap: 8px;
+}
+.status.ok { background: rgba(46,125,50,0.15); border: 1px solid rgba(46,125,50,0.3); }
+.status.err { background: rgba(244,67,54,0.15); border: 1px solid rgba(244,67,54,0.3); color: #EF9A9A; }
+.dot { width: 8px; height: 8px; border-radius: 50%; }
+.dot.green { background: #4CAF50; box-shadow: 0 0 6px #4CAF50; }
+.dot.red { background: #F44336; box-shadow: 0 0 6px #F44336; }
+.binge {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px; border-radius: 8px; margin-bottom: 10px;
+  background: rgba(255,194,51,0.08); border: 1px solid rgba(255,194,51,0.25);
+}
+.binge .bl { display: flex; flex-direction: column; gap: 2px; }
+.binge .bt { font-size: 13px; font-weight: 700; color: #FFC233; }
+.binge .bd { font-size: 10px; color: #8a8a9a; }
+.switch { position: relative; width: 42px; height: 22px; flex-shrink: 0; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider {
+  position: absolute; inset: 0; cursor: pointer; border-radius: 22px;
+  background: #2a2a3a; transition: .2s;
+}
+.slider::before {
+  content: ""; position: absolute; width: 16px; height: 16px; border-radius: 50%;
+  left: 3px; top: 3px; background: #888; transition: .2s;
+}
+.switch input:checked + .slider { background: rgba(255,194,51,0.55); }
+.switch input:checked + .slider::before { transform: translateX(20px); background: #FFC233; }
+.testbtn {
+  width: 100%; padding: 9px; margin-bottom: 6px; cursor: pointer;
+  background: rgba(255,194,51,0.12); color: #FFC233;
+  border: 1px solid rgba(255,194,51,0.35); border-radius: 8px;
+  font-size: 12px; font-weight: 600; font-family: inherit;
+}
+.testbtn:hover { background: rgba(255,194,51,0.22); }
+.testbtn:disabled { opacity: .4; cursor: default; }
+.testmsg { font-size: 10px; color: #8a8a9a; min-height: 14px; margin-bottom: 8px; text-align: center; }
+.info { font-size: 11px; color: #888; line-height: 1.6; }
+.info a { color: #4CAF50; text-decoration: none; }
+.footer { margin-top: 10px; font-size: 10px; color: #555; text-align: center; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <span style="font-size:20px">🎬</span>
+    <h1>TOKU RPC</h1>
+  </div>
+
+  <div id="status" class="status err">
+    <div class="dot red"></div>
+    <span>연결 확인 중...</span>
+  </div>
+
+  <div class="binge">
+    <div class="bl">
+      <span class="bt">📺 정주행 모드</span>
+      <span class="bd">영상 끝나면 자동 다음 화 + 웹훅 기록</span>
+    </div>
+    <label class="switch">
+      <input type="checkbox" id="bingeToggle">
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <button id="testNext" class="testbtn">▶ 다음 화 이동 테스트</button>
+  <div id="testMsg" class="testmsg"></div>
+
+  <div class="info">
+    <b>사용법:</b><br>
+    1. TOKU RPC 앱을 실행<br>
+    2. 지원 사이트 접속 후 영상 재생<br>
+    &nbsp;&nbsp;· <a href="https://pc.tokusatsu-fc.jp/" target="_blank">東映特撮ファンクラブ</a><br>
+    &nbsp;&nbsp;· <a href="https://imagination.m-78.jp/" target="_blank">TSUBURAYA IMAGINATION</a><br>
+    3. Discord에 자동 표시
+  </div>
+
+  <div class="footer">TOKU RPC v2.2.8 브릿지</div>
+
+<script src="popup.js"></script>
+</body>
+</html>
