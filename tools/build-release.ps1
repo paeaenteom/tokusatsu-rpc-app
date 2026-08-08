@@ -96,7 +96,10 @@ $crxUrl = "https://github.com/$REPO/releases/latest/download/toku-rpc-extension.
 "@ | Set-Content (Join-Path $OUT 'update.xml') -Encoding UTF8
 Write-Host "  OK update.xml (확장 v$extVer)" -ForegroundColor Green
 
-# ── 5. 설치 스크립트 동봉 ───────────────────────────
+# ── 5. 설치 프로그램(exe) + 스크립트 동봉 ───────────
+Step "설치 프로그램 빌드"
+& (Join-Path $PSScriptRoot 'build-installer.ps1')
+
 Copy-Item (Join-Path $PSScriptRoot 'install.ps1') $OUT -Force
 Copy-Item (Join-Path $PSScriptRoot 'install.bat') $OUT -Force
 
