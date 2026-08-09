@@ -1,3 +1,5 @@
+**한국어** · [English](README.en.md) · [日本語](README.ja.md)
+
 # TOKU RPC
 
 특촬 스트리밍 시청 정보를 **Discord 프로필에 표시**하고, **정주행 기록**을 남기는 도구.
