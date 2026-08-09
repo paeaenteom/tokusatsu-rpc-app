@@ -76,14 +76,16 @@ Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
 # ── 4. update.xml ───────────────────────────────────
 Step "업데이트 매니페스트"
 $crxUrl = "https://github.com/$REPO/releases/latest/download/toku-rpc-extension.crx"
-@"
+$xml = @"
 <?xml version='1.0' encoding='UTF-8'?>
 <gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>
   <app appid='$EXT_ID'>
     <updatecheck codebase='$crxUrl' version='$extVer' />
   </app>
 </gupdate>
-"@ | Set-Content (Join-Path $OUT 'update.xml') -Encoding UTF8
+"@
+# BOM 없이 저장한다 (브라우저의 XML 파서가 확장 자동 설치에 이 파일만 보고 판단한다)
+[IO.File]::WriteAllText((Join-Path $OUT 'update.xml'), $xml, (New-Object Text.UTF8Encoding $false))
 Write-Host "  OK update.xml (확장 v$extVer)" -ForegroundColor Green
 
 # ── 5. 설치 프로그램 (앱 내장) ──────────────────────
