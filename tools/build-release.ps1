@@ -1,13 +1,14 @@
 ﻿<#
   릴리스 자산 빌드
   ----------------
-  GitHub Releases에 올릴 파일 4개를 dist-release\ 에 만든다.
+  GitHub Releases에 올릴 파일을 dist-release\ 에 만든다.
 
-    TOKU-RPC-Setup-<버전>.exe   앱 설치 프로그램
-    toku-rpc-extension.crx      크롬 확장 (자동 설치용, 서명본)
-    toku-rpc-extension.zip      크롬 확장 (수동 로드용)
+    TOKU-RPC-Setup-<버전>.exe   설치 프로그램 — 앱이 안에 들어 있어 이것만 받으면 된다
+    toku-rpc-extension.crx      크롬 확장 (설치 프로그램이 등록한 정책이 받아가는 서명본)
     update.xml                  크롬이 확장 버전을 확인하는 매니페스트
-    install.ps1                 원클릭 설치 스크립트
+    toku-rpc-extension.zip      확장 수동 로드용 (자동 설치가 막혔을 때)
+
+  앱 본체 ZIP은 따로 올리지 않는다. Setup.exe 안에 이미 들어 있다.
 
   서명키(ttfc-chrome-ext-key.pem)는 저장소에 없다. 프로젝트 루트에 두면
   확장 ID가 항상 같게 유지된다. 키가 바뀌면 ID도 바뀌어 자동 설치가 끊긴다.
@@ -20,7 +21,7 @@ $EXT    = Join-Path $ROOT 'ttfc-chrome-ext'
 $KEY    = Join-Path $ROOT 'ttfc-chrome-ext-key.pem'
 $OUT    = Join-Path $ROOT 'dist-release'
 $EXT_ID = 'dciaobllfdcegjcdmimclgglapnhggjm'
-$REPO   = 'paeaenteom/ttfc_app'
+$REPO   = 'paeaenteom/tokusatsu-rpc-app'
 
 function Step($m) { Write-Host "`n▶ $m" -ForegroundColor Cyan }
 
@@ -32,9 +33,9 @@ $extVer = (Get-Content (Join-Path $EXT 'manifest.json') -Raw -Encoding UTF8 | Co
 Write-Host "앱 v$appVer / 확장 v$extVer" -ForegroundColor White
 
 # ── 1. 앱 빌드 ──────────────────────────────────────
-#  NSIS 설치 프로그램은 코드서명 도구(winCodeSign) 압축 해제에 심볼릭 링크 권한이
-#  필요해 환경에 따라 실패한다. 앱 패키징(win-unpacked) 자체는 항상 성공하므로
-#  그걸 ZIP으로 배포하고, 설치는 install.ps1 이 압축 해제 + 바로가기로 처리한다.
+#  NSIS 설치본은 코드서명 도구(winCodeSign) 압축 해제에 심볼릭 링크 권한이 필요해
+#  환경에 따라 실패한다. 앱 패키징(win-unpacked) 자체는 항상 성공하므로
+#  그 결과를 Setup.exe 안에 통째로 넣어 배포한다.
 Step "앱 빌드"
 Get-Process -Name 'TOKU RPC' -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Seconds 2
@@ -43,18 +44,8 @@ npm run build 2>&1 | Select-String 'packaging|building block' | ForEach-Object {
 Pop-Location
 
 $unpacked = Join-Path $APP 'dist\win-unpacked'
-if (Test-Path (Join-Path $unpacked 'TOKU RPC.exe')) {
-    $zipPath = Join-Path $OUT "TOKU-RPC-$appVer-win.zip"
-    Compress-Archive -Path (Join-Path $unpacked '*') -DestinationPath $zipPath -Force
-    Write-Host "  OK $(Split-Path $zipPath -Leaf) ($([math]::Round((Get-Item $zipPath).Length/1MB,1))MB)" -ForegroundColor Green
-} else {
-    Write-Host "  앱 패키징 실패 — 앱 자산 없이 계속" -ForegroundColor Yellow
-}
-
-# 이번 버전의 설치 프로그램(.exe)이 만들어졌다면 함께 첨부 (환경에 따라 생성됨)
-# ※ 와일드카드로 잡으면 dist에 남아 있는 옛 버전이 섞이므로 정확한 파일명만 본다
-$setup = Get-Item (Join-Path $APP "dist\TOKU-RPC-Setup-$appVer.exe") -ErrorAction SilentlyContinue
-if ($setup) { Copy-Item $setup.FullName $OUT; Write-Host "  OK $($setup.Name) (선택)" -ForegroundColor Green }
+if (-not (Test-Path (Join-Path $unpacked 'TOKU RPC.exe'))) { throw "앱 패키징 실패: $unpacked" }
+Write-Host "  OK win-unpacked" -ForegroundColor Green
 
 # ── 2. 확장 CRX (서명) ──────────────────────────────
 Step "확장 패킹"
@@ -73,10 +64,9 @@ robocopy $EXT $stage /E /NFL /NDL /NJH /NJS /NP | Out-Null
 Remove-Item "$stage.crx" -Force -ErrorAction SilentlyContinue
 & $chrome --pack-extension="$stage" --pack-extension-key="$KEY" --no-message-box | Out-Null
 Start-Sleep -Seconds 5
-if (Test-Path "$stage.crx") {
-    Copy-Item "$stage.crx" (Join-Path $OUT 'toku-rpc-extension.crx') -Force
-    Write-Host "  OK toku-rpc-extension.crx" -ForegroundColor Green
-} else { throw "CRX 생성 실패" }
+if (-not (Test-Path "$stage.crx")) { throw "CRX 생성 실패" }
+Copy-Item "$stage.crx" (Join-Path $OUT 'toku-rpc-extension.crx') -Force
+Write-Host "  OK toku-rpc-extension.crx" -ForegroundColor Green
 
 # ── 3. 확장 ZIP (수동 로드용) ───────────────────────
 Compress-Archive -Path "$stage\*" -DestinationPath (Join-Path $OUT 'toku-rpc-extension.zip') -Force
@@ -96,13 +86,14 @@ $crxUrl = "https://github.com/$REPO/releases/latest/download/toku-rpc-extension.
 "@ | Set-Content (Join-Path $OUT 'update.xml') -Encoding UTF8
 Write-Host "  OK update.xml (확장 v$extVer)" -ForegroundColor Green
 
-# ── 5. 설치 프로그램(exe) + 스크립트 동봉 ───────────
+# ── 5. 설치 프로그램 (앱 내장) ──────────────────────
 Step "설치 프로그램 빌드"
 & (Join-Path $PSScriptRoot 'build-installer.ps1')
 
-Copy-Item (Join-Path $PSScriptRoot 'install.ps1') $OUT -Force
-Copy-Item (Join-Path $PSScriptRoot 'install.bat') $OUT -Force
+# 릴리스 본문에 붙여넣을 설명 (dist-release 는 매번 비우므로 tools 에 원본을 둔다)
+Copy-Item (Join-Path $PSScriptRoot 'RELEASE_NOTES.md') $OUT -Force
 
 Write-Host "`n완료 — $OUT" -ForegroundColor White
-Get-ChildItem $OUT | ForEach-Object { "  {0,-34} {1,8:N1} KB" -f $_.Name, ($_.Length / 1KB) }
+Get-ChildItem $OUT | Sort-Object Length -Descending |
+    ForEach-Object { "  {0,-34} {1,8:N1} MB" -f $_.Name, ($_.Length / 1MB) }
 Write-Host "`n이 파일들을 GitHub 릴리스에 첨부하세요 (태그: v$appVer)" -ForegroundColor DarkGray

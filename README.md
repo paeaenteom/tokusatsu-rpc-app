@@ -12,7 +12,8 @@
 
 ## 설치
 
-릴리스에서 **`TOKU-RPC-Installer.exe`** 하나만 받아 실행하세요. 관리자 권한이 필요 없습니다.
+[릴리스](https://github.com/paeaenteom/tokusatsu-rpc-app/releases/latest)에서
+**`TOKU-RPC-Setup-<버전>.exe`** 하나만 받아 실행하세요. 앱이 안에 들어 있어 추가로 받을 파일이 없습니다.
 
 설치 창에서 **확장을 넣을 브라우저를 골라** 체크하면 됩니다.
 설치된 브라우저를 자동으로 찾아 목록에 보여줍니다.
@@ -22,15 +23,19 @@
 | Google Chrome · Microsoft Edge · 네이버 웨일 · Brave · Vivaldi |
 
 설치 프로그램이 하는 일
-1. 최신 버전을 내려받아 앱 설치 (`%LOCALAPPDATA%\Programs\TOKU RPC`)
+1. 앱 설치 (`%LOCALAPPDATA%\Programs\TOKU RPC`) — 내 계정 폴더, 권한 상승 없음
 2. 선택한 브라우저에 확장 자동 등록
 3. 바탕화면 바로가기 생성 · 앱 실행 *(옵션, 체크 해제 가능)*
+
+2번에서 **관리자 승인 창이 한 번** 뜹니다 → **[예]**.
+Windows가 확장 정책 영역(`SOFTWARE\Policies`)을 관리자에게만 열어두기 때문이고,
+이 단계에서만 승격합니다. 거절해도 앱은 정상 설치되며, 확장만 아래 수동 방법으로 넣으면 됩니다.
 
 설치 후 **브라우저를 완전히 종료했다가 다시 켜주세요.**
 (트레이 아이콘까지 닫아야 확장이 적용됩니다)
 
-> 명령줄에서 조용히 설치하려면 `TOKU-RPC-Installer.exe /S` — 감지된 모든 브라우저에 설치됩니다.
-> GUI 없이 쓰고 싶다면 `install.bat` (PowerShell 스크립트 방식)도 릴리스에 함께 있습니다.
+> 조용히 설치하려면 `TOKU-RPC-Setup-<버전>.exe /S` — 감지된 모든 브라우저에 등록합니다.
+> 설치 기록은 `%TEMP%\toku-rpc-install.log` 에 남습니다.
 
 <details>
 <summary>확장이 자동으로 안 잡힐 때 (수동 설치)</summary>
@@ -132,7 +137,8 @@ cd ttfc-app; npm install          # 최초 1회
 powershell -File tools\build-release.ps1
 ```
 
-`dist-release\` 에 설치 프로그램 · 확장(CRX/ZIP) · `update.xml` · 설치 스크립트가 생성됩니다.
+`dist-release\` 에 `TOKU-RPC-Setup-<버전>.exe` · 확장(CRX/ZIP) · `update.xml` 이 생성됩니다.
+이 파일들을 그대로 릴리스에 첨부하면 됩니다.
 
 > 확장 서명키 `ttfc-chrome-ext-key.pem` 은 저장소에 없습니다.
 > 이 키가 확장 ID를 결정하므로 **잃어버리면 기존 사용자의 자동 업데이트가 끊깁니다.**

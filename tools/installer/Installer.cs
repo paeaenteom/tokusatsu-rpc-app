@@ -3,7 +3,8 @@
 //
 //  · GitHub 최신 릴리스에서 앱을 받아 설치
 //  · 설치된 브라우저를 찾아 목록으로 보여주고, 고른 브라우저에만 확장을 등록
-//  · 관리자 권한이 필요 없다 (사용자 레지스트리 정책만 사용)
+//  · 앱 설치는 사용자 권한으로 (%LOCALAPPDATA%)
+//    확장 정책 키는 Windows 가 관리자에게만 쓰기를 허용하므로 그 단계만 권한 상승
 //
 //  빌드: tools\build-installer.ps1 (csc 로 단일 exe 생성)
 // ============================================================
@@ -14,6 +15,8 @@ using System.Drawing;
 using System.IO;
 using System.IO.Compression;
 using System.Net;
+using System.Security.Principal;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
@@ -155,13 +158,21 @@ namespace TokuRpcInstaller
             else Log("브라우저 " + _found.Count + "개 발견 — 원하는 것만 체크하세요.");
         }
 
+        static readonly string LogFile = Path.Combine(Path.GetTempPath(), "toku-rpc-install.log");
+        static bool _silent = false;   // /S 무인 설치 — 창을 전혀 띄우지 않는다
+        static bool _failed = false;
+
         void Log(string m)
         {
+            // 문제 추적용으로 파일에도 남긴다 (%TEMP%\toku-rpc-install.log)
+            try { File.AppendAllText(LogFile, DateTime.Now.ToString("HH:mm:ss ") + m + Environment.NewLine); } catch { }
+            if (_silent) return;   // 무인 설치에선 컨트롤을 건드리지 않는다 (핸들 생성 = 멈춤 원인)
             if (_log.InvokeRequired) { _log.BeginInvoke((Action)(() => Log(m))); return; }
             _log.AppendText(m + Environment.NewLine);
         }
         void Progress(int v)
         {
+            if (_silent) return;
             if (_bar.InvokeRequired) { _bar.BeginInvoke((Action)(() => Progress(v))); return; }
             _bar.Value = Math.Max(0, Math.Min(100, v));
         }
@@ -186,42 +197,58 @@ namespace TokuRpcInstaller
             {
                 ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072; // TLS 1.2
                 Log("");
-                Log("[1/4] 최신 버전 확인");
-                Progress(5);
-
-                string api = "https://api.github.com/repos/" + Config.Repo + "/releases/latest";
-                string json;
-                using (var wc = new WebClient())
-                {
-                    wc.Headers.Add("User-Agent", "toku-rpc-installer");
-                    json = wc.DownloadString(api);
-                }
-                var tag = Regex.Match(json, "\"tag_name\"\\s*:\\s*\"([^\"]+)\"");
-                if (tag.Success) Log("      버전 " + tag.Groups[1].Value);
-
-                var zipUrl = Regex.Match(json, "\"browser_download_url\"\\s*:\\s*\"([^\"]*win\\.zip)\"");
-                if (!zipUrl.Success) throw new Exception("릴리스에서 앱 파일을 찾지 못했습니다.");
-
-                // ── 앱 내려받기 ──
-                Log("[2/4] 앱 내려받는 중...");
                 string tmp = Path.Combine(Path.GetTempPath(), "tokurpc-" + Guid.NewGuid().ToString("N").Substring(0, 8));
                 Directory.CreateDirectory(tmp);
                 string zip = Path.Combine(tmp, "app.zip");
 
-                using (var wc = new WebClient())
+                // 앱 본체는 이 exe 안에 들어 있다 (오프라인 설치).
+                // 리소스가 없는 경량 빌드일 때만 릴리스에서 내려받는다.
+                var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                using (var res = asm.GetManifestResourceStream("app.zip"))
                 {
-                    wc.Headers.Add("User-Agent", "toku-rpc-installer");
-                    var done = new ManualResetEvent(false);
-                    Exception err = null;
-                    wc.DownloadProgressChanged += (o, ev) => Progress(10 + ev.ProgressPercentage / 2);
-                    wc.DownloadFileCompleted += (o, ev) => { err = ev.Error; done.Set(); };
-                    wc.DownloadFileAsync(new Uri(zipUrl.Groups[1].Value), zip);
-                    done.WaitOne();
-                    if (err != null) throw err;
+                    if (res != null)
+                    {
+                        Log("[1/3] 앱 파일 준비 (내장, " + (res.Length / 1024 / 1024) + "MB)");
+                        using (var fs = File.Create(zip))
+                        {
+                            byte[] buf = new byte[1 << 20];
+                            long total = 0; int n;
+                            while ((n = res.Read(buf, 0, buf.Length)) > 0)
+                            {
+                                fs.Write(buf, 0, n);
+                                total += n;
+                                Progress((int)(5 + 55.0 * total / res.Length));
+                            }
+                        }
+                    }
+                    else
+                    {
+                        Log("[1/3] 최신 버전 내려받는 중...");
+                        string api = "https://api.github.com/repos/" + Config.Repo + "/releases/latest";
+                        string json;
+                        using (var wc = new WebClient())
+                        {
+                            wc.Headers.Add("User-Agent", "toku-rpc-installer");
+                            json = wc.DownloadString(api);
+                        }
+                        var zipUrl = Regex.Match(json, "\"browser_download_url\"\\s*:\\s*\"([^\"]*win\\.zip)\"");
+                        if (!zipUrl.Success) throw new Exception("앱 파일을 찾지 못했습니다.");
+                        using (var wc = new WebClient())
+                        {
+                            wc.Headers.Add("User-Agent", "toku-rpc-installer");
+                            var done = new ManualResetEvent(false);
+                            Exception err = null;
+                            wc.DownloadProgressChanged += (o, ev) => Progress(5 + ev.ProgressPercentage / 2);
+                            wc.DownloadFileCompleted += (o, ev) => { err = ev.Error; done.Set(); };
+                            wc.DownloadFileAsync(new Uri(zipUrl.Groups[1].Value), zip);
+                            done.WaitOne();
+                            if (err != null) throw err;
+                        }
+                    }
                 }
 
                 // ── 설치 ──
-                Log("[3/4] 설치 중...");
+                Log("[2/3] 설치 중...");
                 Progress(65);
                 foreach (var p in Process.GetProcessesByName("TOKU RPC"))
                 { try { p.Kill(); p.WaitForExit(5000); } catch { } }
@@ -237,10 +264,13 @@ namespace TokuRpcInstaller
                 if (shortcut) MakeShortcut();
 
                 // ── 확장 등록 ──
-                Log("[4/4] 브라우저 확장 등록");
+                Log("[3/3] 브라우저 확장 등록");
+                Log("      대상 " + picked.Count + "개 / 감지된 브라우저 " + _found.Count + "개");
                 if (picked.Count == 0) Log("      선택된 브라우저 없음 — 건너뜀");
+                var needAdmin = new List<Browser>();
                 foreach (var b in picked)
                 {
+                    if (IsElevated) { needAdmin.Add(b); continue; }   // 이미 관리자면 바로 HKLM 으로
                     try
                     {
                         string key = @"SOFTWARE\Policies\" + b.PolicyPath + @"\ExtensionSettings\" + Config.ExtId;
@@ -251,8 +281,14 @@ namespace TokuRpcInstaller
                         }
                         Log("      OK  " + b.Name + (b.Running ? "  ← 재시작 필요" : ""));
                     }
+                    catch (UnauthorizedAccessException)
+                    {
+                        // HKCU\SOFTWARE\Policies 는 대부분의 PC 에서 관리자만 쓸 수 있다
+                        needAdmin.Add(b);
+                    }
                     catch (Exception ex) { Log("      실패  " + b.Name + " : " + ex.Message); }
                 }
+                if (needAdmin.Count > 0) RegisterPolicies(needAdmin);
                 Progress(95);
 
                 try { Directory.Delete(tmp, true); } catch { }
@@ -277,7 +313,76 @@ namespace TokuRpcInstaller
             {
                 Log("");
                 Log("오류: " + ex.Message);
+                _failed = true;
                 Done("설치 실패", "설치 중 문제가 발생했습니다.\n\n" + ex.Message);
+            }
+        }
+
+        static bool IsElevated
+        {
+            get
+            {
+                try { return new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator); }
+                catch { return false; }
+            }
+        }
+
+        /// <summary>
+        /// 확장 정책을 HKLM 에 등록한다.
+        /// Windows 는 HKCU\SOFTWARE\Policies 조차 관리자에게만 쓰기를 허용하므로,
+        /// 권한이 없으면 이 단계에서만 한 번 승격한다 (앱 본체는 이미 사용자 폴더에 설치된 뒤다).
+        /// </summary>
+        void RegisterPolicies(List<Browser> list)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("@echo off");
+            foreach (var b in list)
+            {
+                string key = @"HKLM\SOFTWARE\Policies\" + b.PolicyPath + @"\ExtensionSettings\" + Config.ExtId;
+                sb.AppendLine("reg add \"" + key + "\" /v installation_mode /t REG_SZ /d normal_installed /f /reg:64");
+                sb.AppendLine("reg add \"" + key + "\" /v update_url /t REG_SZ /d \"" + Config.UpdateUrl + "\" /f /reg:64");
+            }
+            sb.AppendLine("exit /b 0");
+
+            string cmd = Path.Combine(Path.GetTempPath(), "toku-rpc-policy.cmd");
+            try { File.WriteAllText(cmd, sb.ToString(), Encoding.Default); }
+            catch (Exception ex) { Log("      실패  정책 스크립트 생성: " + ex.Message); return; }
+
+            try
+            {
+                if (!IsElevated) Log("      관리자 승인 창이 뜨면 [예]를 눌러주세요 (확장 등록용)");
+                var psi = new ProcessStartInfo("cmd.exe", "/c \"" + cmd + "\"");
+                psi.UseShellExecute = true;
+                psi.CreateNoWindow = true;
+                psi.WindowStyle = ProcessWindowStyle.Hidden;
+                if (!IsElevated) psi.Verb = "runas";
+                var p = Process.Start(psi);
+                p.WaitForExit(60000);
+            }
+            catch (System.ComponentModel.Win32Exception wex)
+            {
+                // 1223 = 사용자가 UAC 를 취소
+                Log("      [win32 " + wex.NativeErrorCode + "] " + wex.Message);
+                Log("      관리자 승인이 거부되어 확장을 자동 등록하지 못했습니다.");
+                Log("      → 브라우저에서 확장 관리 페이지를 열고 crx 를 직접 넣어주세요 (README 참고)");
+                return;
+            }
+            catch (Exception ex) { Log("      실패  정책 등록: " + ex.Message); return; }
+            finally { try { File.Delete(cmd); } catch { } }
+
+            // 실제로 써졌는지 확인한다
+            foreach (var b in list)
+            {
+                string key = @"SOFTWARE\Policies\" + b.PolicyPath + @"\ExtensionSettings\" + Config.ExtId;
+                bool ok = false;
+                try
+                {
+                    using (var k = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64).OpenSubKey(key))
+                        ok = k != null && (k.GetValue("installation_mode") as string) == "normal_installed";
+                }
+                catch { }
+                Log(ok ? "      OK  " + b.Name + (b.Running ? "  ← 재시작 필요" : "")
+                       : "      실패  " + b.Name + " : 정책이 등록되지 않았습니다");
             }
         }
 
@@ -303,6 +408,7 @@ namespace TokuRpcInstaller
 
         void Done(string title, string msg)
         {
+            if (_silent) return;   // 무인 설치는 조용히 끝낸다 (모달을 띄우면 프로세스가 안 죽는다)
             if (InvokeRequired) { BeginInvoke((Action)(() => Done(title, msg))); return; }
             _btnInstall.Text = "닫기";
             _btnInstall.Enabled = true;
@@ -317,11 +423,12 @@ namespace TokuRpcInstaller
             // /S : 조용히 설치 (감지된 모든 브라우저 대상)
             if (Array.IndexOf(args, "/S") >= 0)
             {
+                _silent = true;
                 var f = new MainForm();
                 var all = new List<Browser>();
                 foreach (var b in Config.Browsers) if (b.Installed) all.Add(b);
                 f.Install(all, true, true);
-                return;
+                Environment.Exit(_failed ? 1 : 0);   // 남은 UI 스레드까지 확실히 종료
             }
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
