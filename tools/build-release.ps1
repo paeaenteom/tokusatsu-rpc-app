@@ -92,8 +92,11 @@ Write-Host "  OK update.xml (확장 v$extVer)" -ForegroundColor Green
 Step "설치 프로그램 빌드"
 & (Join-Path $PSScriptRoot 'build-installer.ps1')
 
-# 릴리스 본문에 붙여넣을 설명 (dist-release 는 매번 비우므로 tools 에 원본을 둔다)
-Copy-Item (Join-Path $PSScriptRoot 'RELEASE_NOTES.md') $OUT -Force
+# 릴리스 본문 (dist-release 는 매번 비우므로 tools 에 원본을 둔다)
+# release-body.md 가 실제로 릴리스 설명란에 붙여넣을 파일이다.
+# 한국어 본문 첫 문단 뒤에 영어·일본어를 접기 블록으로 끼워 한 본문에 세 언어를 담는다.
+Copy-Item (Join-Path $PSScriptRoot 'RELEASE_NOTES*.md') $OUT -Force
+node (Join-Path $PSScriptRoot 'build-release-body.js') (Join-Path $OUT 'release-body.md')
 
 Write-Host "`n완료 — $OUT" -ForegroundColor White
 Get-ChildItem $OUT | Sort-Object Length -Descending |
