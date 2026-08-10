@@ -20,6 +20,9 @@ The app and the browser extension are installed in one go. There's nothing else 
   - Pausing does not end a binge
 - Sends your binge log to a Discord webhook *(optional — see the README)*
 - Lives in the tray and starts automatically when you boot your PC
+- **한국어 · English · 日本語** — defaults to your system language
+  - Change it in the app's window or the extension's popup; the extension follows the app
+  - What shows on Discord and what goes into the binge log use the same language
 
 ## Files
 
