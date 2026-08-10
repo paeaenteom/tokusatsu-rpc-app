@@ -27,6 +27,21 @@ class ExtensionBridge {
         this.wss = null;
         this._started = false;
         this.onConnectionChange = null;  // 미니 창용 콜백
+        this.lang = 'ko';                // 확장에 알려줄 앱 언어
+    }
+
+    // 앱 언어를 확장에 알린다. 확장 언어 설정이 '시스템 언어'면 이 값을 따라간다.
+    setLang(lang) {
+        this.lang = lang;
+        this._broadcast({ type: 'LANG', lang });
+    }
+
+    _broadcast(obj) {
+        if (!this.wss) return;
+        const data = JSON.stringify(obj);
+        for (const ws of this.wss.clients) {
+            try { ws.send(data); } catch (e) { /* 끊긴 클라이언트 */ }
+        }
     }
 
     get clientCount() {
@@ -54,7 +69,7 @@ class ExtensionBridge {
                 log.info(`[Bridge] 크롬 확장 연결됨 (${this.wss.clients.size}개)`);
                 this._notifyConnection();
 
-                ws.send(JSON.stringify({ type: 'CONNECTED' }));
+                ws.send(JSON.stringify({ type: 'CONNECTED', lang: this.lang }));
 
                 ws.on('message', (data) => {
                     try {

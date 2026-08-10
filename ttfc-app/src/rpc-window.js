@@ -4,24 +4,48 @@
 
 const $ = (id) => document.getElementById(id);
 
+// ════════════════════════════════════════
+//  다국어
+//   main 프로세스가 현재 언어의 문자열 표를 통째로 넘겨준다.
+//   data-i18n="키" 가 붙은 요소는 applyStrings() 가 한 번에 채운다.
+// ════════════════════════════════════════
+
+let STR = {};
+
+function t(key, vars) {
+  let s = STR[key];
+  if (s === undefined) return key;
+  if (vars) s = s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m));
+  return s;
+}
+
+function applyStrings() {
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    el.textContent = t(el.getAttribute('data-i18n'));
+  });
+  document.documentElement.lang = LANG;
+}
+
+let LANG = 'ko';
+
 // ── 상태 갱신 ──
 function applyStatus(s) {
   // 크롬 확장
   if (s.extConnected) {
     $('extDot').className = 'dot on';
-    $('extStatus').textContent = `연결됨 (${s.extClients})`;
+    $('extStatus').textContent = t('win.extConnected', { n: s.extClients });
   } else {
     $('extDot').className = 'dot off';
-    $('extStatus').textContent = '대기 중';
+    $('extStatus').textContent = t('win.extWaiting');
   }
 
   // Discord
   if (s.dcConnected) {
     $('dcDot').className = 'dot on';
-    $('dcStatus').textContent = s.dcUser || '연결됨';
+    $('dcStatus').textContent = s.dcUser || t('win.dcConnected');
   } else {
     $('dcDot').className = 'dot off';
-    $('dcStatus').textContent = '연결 안 됨';
+    $('dcStatus').textContent = t('win.dcDisconnected');
   }
 
   // 현재 RPC 표시 내용
@@ -47,10 +71,10 @@ function applyStatus(s) {
       $('prevTime').textContent = `▶ ${fmt(cur)} / ${fmt(total)}`;
     } else if (a.endTimestamp) {
       const remain = a.endTimestamp - Math.floor(Date.now() / 1000);
-      $('prevTime').textContent = `⏳ ${fmt(remain)} 남음`;
+      $('prevTime').textContent = '⏳ ' + t('win.timeLeft', { t: fmt(remain) });
     } else if (a.startTimestamp) {
       const cur = Math.floor(Date.now() / 1000) - a.startTimestamp;
-      $('prevTime').textContent = `🕐 ${fmt(cur)} 경과`;
+      $('prevTime').textContent = '🕐 ' + t('win.timeElapsed', { t: fmt(cur) });
     } else {
       $('prevTime').textContent = a.smallImageText || '';
     }
@@ -58,7 +82,7 @@ function applyStatus(s) {
     preview.classList.add('empty');
     $('prevThumb').textContent = '?';
     $('prevApp').textContent = 'TOKU RPC';
-    $('prevDetails').textContent = '표시 중인 내용 없음';
+    $('prevDetails').textContent = t('win.nothing');
     $('prevState').textContent = '';
     $('prevTime').textContent = '';
   }
@@ -67,10 +91,10 @@ function applyStatus(s) {
   const mt = $('mainToggle');
   if (s.rpcEnabled) {
     mt.className = 'main-toggle on';
-    mt.textContent = 'RPC 켜짐';
+    mt.textContent = t('win.rpcOn');
   } else {
     mt.className = 'main-toggle off';
-    mt.textContent = 'RPC 꺼짐';
+    mt.textContent = t('win.rpcOff');
   }
 }
 
@@ -129,8 +153,8 @@ $('consoleCopyBtn').addEventListener('click', async () => {
     .map(l => `${new Date(l.t).toLocaleTimeString()} [${l.level}] ${l.msg}`)
     .join('\n');
   try { await navigator.clipboard.writeText(text); } catch (e) {}
-  $('consoleCopyBtn').textContent = '복사됨!';
-  setTimeout(() => { $('consoleCopyBtn').textContent = '복사'; }, 1200);
+  $('consoleCopyBtn').textContent = t('win.copied');
+  setTimeout(() => { $('consoleCopyBtn').textContent = t('win.copy'); }, 1200);
 });
 
 window.rpcAPI.onConsoleLine((line) => consoleAppend(line));
@@ -160,6 +184,34 @@ function bindSettings() {
   });
 }
 
+// ── 언어 ──
+async function loadLanguage() {
+  const i = await window.rpcAPI.getI18n();
+  STR = i.strings;
+  LANG = i.lang;
+  $('langSelect').value = i.setting || 'auto';
+  applyStrings();
+}
+
+function bindLanguage() {
+  $('langSelect').addEventListener('change', async () => {
+    const r = await window.rpcAPI.setLang($('langSelect').value);
+    STR = r.strings;
+    LANG = r.lang;
+    applyStrings();
+    // 문자열이 코드로 들어가는 자리(상태·미리보기)도 즉시 다시 그린다
+    applyStatus(await window.rpcAPI.getStatus());
+  });
+
+  // 트레이 등 다른 경로로 언어가 바뀐 경우
+  window.rpcAPI.onLangChange(async (p) => {
+    STR = p.strings;
+    LANG = p.lang;
+    applyStrings();
+    applyStatus(await window.rpcAPI.getStatus());
+  });
+}
+
 $('mainToggle').addEventListener('click', () => window.rpcAPI.toggleRPC());
 $('reconnectBtn').addEventListener('click', () => window.rpcAPI.reconnect());
 
@@ -168,6 +220,8 @@ window.rpcAPI.onStatus((s) => applyStatus(s));
 
 // ── 초기화 ──
 (async () => {
+  await loadLanguage();     // 문자열부터 채우고 나머지를 그린다
+  bindLanguage();
   await loadSettings();
   bindSettings();
   await loadConsole();

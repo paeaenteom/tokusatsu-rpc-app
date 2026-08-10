@@ -52,6 +52,15 @@ body {
 .info { font-size: 11px; color: #888; line-height: 1.6; }
 .info a { color: #4CAF50; text-decoration: none; }
 .footer { margin-top: 10px; font-size: 10px; color: #555; text-align: center; }
+.langrow {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid #22222f;
+  font-size: 11px; color: #888;
+}
+.langrow select {
+  background: #16161f; color: #E8F5E9; border: 1px solid #2a2a3a;
+  border-radius: 6px; padding: 3px 6px; font-size: 11px; font-family: inherit;
+}
 </style>
 </head>
 <body>
@@ -62,13 +71,13 @@ body {
 
   <div id="status" class="status err">
     <div class="dot red"></div>
-    <span>연결 확인 중...</span>
+    <span data-i18n="popup.checking"></span>
   </div>
 
   <div class="binge">
     <div class="bl">
-      <span class="bt">📺 정주행 모드</span>
-      <span class="bd">영상 끝나면 자동 다음 화 + 웹훅 기록</span>
+      <span class="bt" data-i18n="popup.bingeTitle"></span>
+      <span class="bd" data-i18n="popup.bingeDesc"></span>
     </div>
     <label class="switch">
       <input type="checkbox" id="bingeToggle">
@@ -76,20 +85,34 @@ body {
     </label>
   </div>
 
-  <button id="testNext" class="testbtn">▶ 다음 화 이동 테스트</button>
+  <button id="testNext" class="testbtn" data-i18n="popup.testNext"></button>
   <div id="testMsg" class="testmsg"></div>
 
   <div class="info">
-    <b>사용법:</b><br>
-    1. TOKU RPC 앱을 실행<br>
-    2. 지원 사이트 접속 후 영상 재생<br>
+    <b data-i18n="popup.howto"></b><br>
+    1. <span data-i18n="popup.step1"></span><br>
+    2. <span data-i18n="popup.step2"></span><br>
     &nbsp;&nbsp;· <a href="https://pc.tokusatsu-fc.jp/" target="_blank">東映特撮ファンクラブ</a><br>
     &nbsp;&nbsp;· <a href="https://imagination.m-78.jp/" target="_blank">TSUBURAYA IMAGINATION</a><br>
-    3. Discord에 자동 표시
+    3. <span data-i18n="popup.step3"></span>
   </div>
 
-  <div class="footer">TOKU RPC v2.2.8 브릿지</div>
+  <div class="langrow">
+    <span data-i18n="popup.language"></span>
+    <select id="langSelect">
+      <option value="auto" data-i18n="popup.langAuto"></option>
+      <option value="ko">한국어</option>
+      <option value="en">English</option>
+      <option value="ja">日本語</option>
+    </select>
+  </div>
 
+  <div class="footer" id="footer"></div>
+
+<script src="locales/ko.js"></script>
+<script src="locales/en.js"></script>
+<script src="locales/ja.js"></script>
+<script src="i18n.js"></script>
 <script src="popup.js"></script>
 </body>
 </html>

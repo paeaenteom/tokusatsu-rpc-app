@@ -12,6 +12,7 @@
 
 const log = require('electron-log');
 const secrets = require('./secrets');
+const i18n = require('./i18n');
 
 // ── 웹훅 주소는 저장소·배포본에 넣지 않는다 ──
 //  공개되면 누구나 이 채널에 글을 쓸 수 있다(도배·스팸 위험).
@@ -45,6 +46,9 @@ class BingeLogger {
         this._logged = new Map();  // key → 기록 시각
         this._lastSeries = '';
     }
+
+    // 웹훅 문구는 앱 언어를 따른다 (RPC 와 같은 언어를 쓴다)
+    _t(key, vars) { return i18n.t((this.rpc && this.rpc.lang) || 'ko', key, vars); }
 
     // extension-bridge가 VIDEO 상태마다 호출
     //  ⚠ 여러 탭(TTFC+IMAGINATION)이 동시에 열려 있으면 상태가 번갈아 도착한다.
@@ -97,7 +101,7 @@ class BingeLogger {
     }
 
     async _sendStart(s) {
-        const epLabel = [s.episodeNumber, s.episodeTitle].filter(Boolean).join(' / ') || '에피소드';
+        const epLabel = [s.episodeNumber, s.episodeTitle].filter(Boolean).join(' / ') || this._t('hook.episode');
         const siteName = SITE_NAMES[s.site] || s.site;
         const { bytes, url: hosted } = await this._waitThumb(s.thumbnail);
 
@@ -105,9 +109,9 @@ class BingeLogger {
             title: s.seriesName,                                     // 큰 타이틀: 시리즈명
             description: s.url ? `[${epLabel}](${s.url})` : epLabel, // 작은 타이틀: 에피소드 하이퍼링크
             color: s.site === 'imagination' ? 0xd32f5a : 0x2ea6ff,
-            footer: { text: `${siteName} · 정주행 모드` },
+            footer: { text: `${siteName} · ${this._t('hook.bingeMode')}` },
         };
-        const content = `▶ ${fmtNow()} — **${epLabel}** 시청 시작`;
+        const content = this._t('hook.start', { time: fmtNow(), ep: epLabel });
 
         // 1순위: 이미지를 디스코드에 직접 첨부 (외부 호스트 만료와 무관하게 영구 보존)
         if (bytes && bytes.buf) {
@@ -127,10 +131,10 @@ class BingeLogger {
         const name = (msg && msg.seriesName) || this._lastSeries || '';
         this._lastKey = '';
         return this._post({
-            content: `🏁 ${fmtNow()} — **${name}** 정주행 끝!`,
+            content: this._t('hook.end', { time: fmtNow(), name }),
             embeds: [{
-                title: `${name} 완주`,
-                description: `마지막 화까지 시청 완료`,
+                title: this._t('hook.endTitle', { name }),
+                description: this._t('hook.endDesc'),
                 color: 0xffc233,
                 footer: { text: `${SITE_NAMES[(msg && msg.site)] || ''} · ${fmtNow()}` },
             }],

@@ -21,6 +21,7 @@
 const RPC = require('discord-rpc');
 const log = require('electron-log');
 const secrets = require('./secrets');
+const i18n = require('./i18n');
 
 const MIN_UPDATE_INTERVAL = 1000; // Discord 안전 간격 (변경 이벤트는 _forceUpdate의 500ms 경로)
 const THUMB_TTL = 2 * 60 * 60 * 1000; // 재호스팅 URL 유효기간 2시간 (uguu 3h·litterbox 72h 만료 대비)
@@ -145,6 +146,7 @@ class DiscordRichPresence {
         this.client = null;
         this.connected = false;
         this.reconnectTimer = null;
+        this.lang = 'ko';   // main.js 가 setLang 으로 실제 언어를 넣어준다
 
         this.currentState = {
             isWatching: false,
@@ -525,7 +527,16 @@ class DiscordRichPresence {
         if (settings.showButtons === false) return undefined;
         const site = siteOf(this.currentState.site);
         const url = isHttpUrl(this.currentState.pageUrl) ? this.currentState.pageUrl : site.homeUrl;
-        return [{ label: '사이트에서 보기', url }];
+        return [{ label: this._t('rpc.viewOnSite'), url }];
+    }
+
+    _t(key, vars) { return i18n.t(this.lang, key, vars); }
+
+    // 언어가 바뀌면 지금 떠 있는 표시도 바로 갈아끼운다
+    setLang(lang) {
+        if (lang === this.lang) return;
+        this.lang = lang;
+        if (this.connected && this.currentState.isWatching !== undefined) this._forceUpdate();
     }
 
     _buildAndSendWatching() {
@@ -562,8 +573,8 @@ class DiscordRichPresence {
             largeImageText: clamp(seriesName),
             smallImageKey: s.isPlaying ? site.play : site.pause,
             smallImageText: s.isPlaying
-                ? `${siteName} 시청 중`                             // 2줄: 사이트명
-                : `${siteName}・일시정지`,
+                ? this._t('rpc.watching', { site: siteName })       // 2줄: 사이트명
+                : this._t('rpc.paused', { site: siteName }),
             instance: false,
         };
 
@@ -596,7 +607,8 @@ class DiscordRichPresence {
         const pageBanner = s.pageBanner || '';
 
         // details: 페이지 타입 / state: 페이지 상세 (없으면 생략)
-        const details = pageTitle || 'ブラウジング中';
+        // 확장이 페이지 종류를 못 보냈을 때만 쓰는 대체값 (보통은 확장 쪽 번역이 온다)
+        const details = pageTitle || this._t('rpc.browsing');
         const state = pageDetail ? clamp(pageDetail) : undefined;
 
         // 큰 이미지: 페이지 배너(작품 비주얼/시리즈 배너/프라네트 아이콘) → 사이트 로고

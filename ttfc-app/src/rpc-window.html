@@ -151,67 +151,76 @@
     <div class="status-card">
       <div class="dot off" id="extDot"></div>
       <div>
-        <div class="label">크롬 확장</div>
-        <div class="value" id="extStatus">대기 중</div>
+        <div class="label" data-i18n="win.ext"></div>
+        <div class="value" id="extStatus"></div>
       </div>
     </div>
     <div class="status-card">
       <div class="dot off" id="dcDot"></div>
       <div>
         <div class="label">Discord</div>
-        <div class="value" id="dcStatus">연결 안 됨</div>
+        <div class="value" id="dcStatus"></div>
       </div>
     </div>
   </div>
 
-  <div class="section-title">현재 표시 중</div>
+  <div class="section-title" data-i18n="win.nowShowing"></div>
   <div class="rpc-preview empty" id="preview">
     <div class="thumb" id="prevThumb">?</div>
     <div class="info">
       <div class="app" id="prevApp">TOKU RPC</div>
-      <div class="details" id="prevDetails">표시 중인 내용 없음</div>
+      <div class="details" id="prevDetails"></div>
       <div class="state" id="prevState"></div>
       <div class="time" id="prevTime"></div>
     </div>
   </div>
 
-  <div class="section-title">RPC 표시 설정</div>
+  <div class="section-title" data-i18n="win.settings"></div>
   <div class="settings">
     <div class="toggle-row">
-      <span class="name">작품명 표시</span>
+      <span class="name" data-i18n="win.showSeries"></span>
       <label class="switch"><input type="checkbox" id="showSeries" checked><span class="slider"></span></label>
     </div>
     <div class="toggle-row">
-      <span class="name">에피소드 표시</span>
+      <span class="name" data-i18n="win.showEpisode"></span>
       <label class="switch"><input type="checkbox" id="showEpisode" checked><span class="slider"></span></label>
     </div>
     <div class="toggle-row">
-      <span class="name">썸네일 표시</span>
+      <span class="name" data-i18n="win.showThumbnail"></span>
       <label class="switch"><input type="checkbox" id="showThumbnail" checked><span class="slider"></span></label>
     </div>
     <div class="toggle-row">
-      <span class="name">버튼 표시</span>
+      <span class="name" data-i18n="win.showButtons"></span>
       <label class="switch"><input type="checkbox" id="showButtons" checked><span class="slider"></span></label>
     </div>
     <div class="select-row">
-      <span class="name">시간 표시</span>
+      <span class="name" data-i18n="win.timeMode"></span>
       <select id="timeMode">
-        <option value="progress">경과 + 남은 시간</option>
-        <option value="remaining">남은 시간만</option>
-        <option value="none">표시 안 함</option>
+        <option value="progress" data-i18n="win.timeProgress"></option>
+        <option value="remaining" data-i18n="win.timeRemaining"></option>
+        <option value="none" data-i18n="win.timeNone"></option>
+      </select>
+    </div>
+    <div class="select-row">
+      <span class="name" data-i18n="win.language"></span>
+      <select id="langSelect">
+        <option value="auto" data-i18n="win.langAuto"></option>
+        <option value="ko">한국어</option>
+        <option value="en">English</option>
+        <option value="ja">日本語</option>
       </select>
     </div>
   </div>
 
-  <button class="main-toggle on" id="mainToggle">RPC 켜짐</button>
+  <button class="main-toggle on" id="mainToggle"></button>
   <div class="btn-row">
-    <button class="btn" id="reconnectBtn">🔁 Discord 재연결</button>
+    <button class="btn" id="reconnectBtn" data-i18n="win.reconnect"></button>
   </div>
 
   <div class="console-head">
-    <div class="section-title">콘솔</div>
-    <button class="mini-btn" id="consoleCopyBtn">복사</button>
-    <button class="mini-btn" id="consoleClearBtn">지우기</button>
+    <div class="section-title" data-i18n="win.console"></div>
+    <button class="mini-btn" id="consoleCopyBtn" data-i18n="win.copy"></button>
+    <button class="mini-btn" id="consoleClearBtn" data-i18n="win.clear"></button>
   </div>
   <div class="console" id="console"></div>
 

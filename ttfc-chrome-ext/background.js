@@ -9,6 +9,9 @@
 //   3. content.js 의 주기 전송이 워커를 계속 깨움
 // ============================================================
 
+importScripts('locales/ko.js', 'locales/en.js', 'locales/ja.js', 'i18n.js');
+const i18n = self.TOKU_I18N;
+
 const WS_URL = 'ws://127.0.0.1:7690';
 const ALARM_NAME = 'toku-rpc-keepalive';
 const LOG = (...a) => console.log('[TOKU RPC/bg]', ...a);
@@ -99,8 +102,13 @@ function ensureConnected() {
             }
           });
         }
+        else if (msg.type === 'LANG') {
+          // 앱에서 언어가 바뀜 — 확장 설정이 '시스템 언어'면 이걸 따라간다
+          chrome.storage.local.set({ appLang: msg.lang || '' });
+        }
         else if (msg.type === 'CONNECTED') {
           LOG('앱 핸드셰이크 수신');
+          if (msg.lang) chrome.storage.local.set({ appLang: msg.lang });
           // 앱 (재)시작 = 앱의 재호스팅 캐시 소실 → content의 "이미 보냄" 기록을
           // 리셋해 썸네일 바이트 재전송 유도 (안 하면 재시작 후 로고만 계속 뜸)
           chrome.tabs.query({}, (tabs) => {
@@ -208,13 +216,15 @@ function syncBingeBadge() {
     const on = !!r.bingeMode;
     chrome.action.setBadgeText({ text: on ? 'ON' : '' });
     chrome.action.setBadgeBackgroundColor({ color: '#FFC233' });
-    chrome.action.setTitle({ title: on ? 'TOKU RPC — 정주행 모드 ON' : 'TOKU RPC' });
+    chrome.action.setTitle({ title: on ? i18n.t('bg.titleOn') : 'TOKU RPC' });
   });
 }
 chrome.storage.onChanged.addListener((ch, area) => {
-  if (area === 'local' && ch.bingeMode) syncBingeBadge();
+  if (area !== 'local') return;
+  // 언어가 바뀌면 툴팁도 다시 쓴다 (i18n 이 먼저 갱신되도록 한 틱 뒤에)
+  if (ch.bingeMode || ch.lang || ch.appLang) setTimeout(syncBingeBadge, 0);
 });
-syncBingeBadge();
+i18n.refresh(() => syncBingeBadge());
 
 // ── keepalive 알람 ──
 chrome.alarms.create(ALARM_NAME, { periodInMinutes: 0.5 });

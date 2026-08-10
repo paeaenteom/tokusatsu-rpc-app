@@ -17,6 +17,9 @@
 // ============================================================
 
 (() => {
+  // 페이지 종류 이름은 다국어 표에서 가져온다 (Discord 에 그대로 표시된다)
+  const T = (key) => (self.TOKU_I18N ? self.TOKU_I18N.t(key) : key);
+
   // 시리즈 카테고리 → Discord Art Assets 키
   //  사이트의 banner_series_N.png는 외부 접근이 막혀 디스코드가 못 불러온다.
   //  → Dev Portal에 올린 에셋 키를 그대로 쓴다(재호스팅 불필요, 즉시 표시).
@@ -233,13 +236,13 @@
 
     extractBrowsing() {
       const path = location.pathname.toLowerCase();
-      let page = 'ブラウジング中';
+      let page = T('page.browsing');
       let detail = '';
       let banner = '';
 
       // 에피소드 선택: /movies/{id}/movie-stories — 배너는 페이지 메인 비주얼(og:image)
       if (/\/movies\/\d+\/movie-stories\/?$/.test(path)) {
-        page = '作品ページ';
+        page = T('page.work');
         detail = ogSeriesName();
         banner = ogContentImage();
         if (!banner) { const s = detectSeries(); if (s) banner = s.banner; }
@@ -247,34 +250,34 @@
       }
       // 작품 상세: /works/{id}/contents — 배너는 작품 메인 비주얼(og:image)
       else if (/\/works\/\d+/.test(path)) {
-        page = '作品ページ';
+        page = T('page.work');
         detail = ogSeriesName();
         banner = ogContentImage();
         if (!banner) { const s = detectSeries(); if (s) banner = s.banner; }
       }
       // 특집: /specials/{id}/contents (og:title generic → 라벨만)
       else if (/\/specials\/\d+/.test(path)) {
-        page = '特集';
+        page = T('page.special');
         detail = ogSeriesName();
         banner = ogContentImage();
       }
       // 시리즈 목록: /series/{id}/works
       else if (/\/series\/\d+/.test(path)) {
         const s = detectSeries();
-        page = 'シリーズ一覧';
+        page = T('page.seriesList');
         detail = s ? s.name : ogSeriesName();
         if (s) banner = s.banner;
       }
-      else if (/\/articles\/\d+/.test(path)) { page = '記事'; detail = ogSeriesName(); }
-      else if (path.includes('/search')) page = '作品を検索中';
-      else if (path.includes('/favorite')) page = 'お気に入り';
-      else if (path.includes('/histories') || path.includes('/history')) page = '視聴履歴';
-      else if (path.includes('/purchase')) page = '購入履歴';
-      else if (path.includes('/settings')) page = '設定';
-      else if (path.includes('/notice')) page = 'お知らせ';
-      else if (path.includes('/qa') || path.includes('/help') || path.includes('/faq')) page = 'ヘルプ';
-      else if (path === '/new') page = '新着';
-      else if (path === '/' || path === '') page = 'ホーム';
+      else if (/\/articles\/\d+/.test(path)) { page = T('page.article'); detail = ogSeriesName(); }
+      else if (path.includes('/search')) page = T('page.search');
+      else if (path.includes('/favorite')) page = T('page.favorite');
+      else if (path.includes('/histories') || path.includes('/history')) page = T('page.history');
+      else if (path.includes('/purchase')) page = T('page.purchase');
+      else if (path.includes('/settings')) page = T('page.settings');
+      else if (path.includes('/notice')) page = T('page.notice');
+      else if (path.includes('/qa') || path.includes('/help') || path.includes('/faq')) page = T('page.help');
+      else if (path === '/new') page = T('page.new');
+      else if (path === '/' || path === '') page = T('page.home');
 
       return { page, detail, banner };
     },

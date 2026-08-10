@@ -20,6 +20,9 @@
 // ============================================================
 
 (() => {
+  // 페이지 종류 이름은 다국어 표에서 가져온다 (Discord 에 그대로 표시된다)
+  const T = (key) => (self.TOKU_I18N ? self.TOKU_I18N.t(key) : key);
+
   const SITE_NAME = 'TSUBURAYA IMAGINATION';
   const TITLE_SUFFIX = /[｜|]\s*TSUBURAYA[\s　]*IMAGINATION.*$/;
   const EP_SPLIT = /(第\s*[0-9０-９一二三四五六七八九十百千]+\s*[話章夜楽]|EPISODE\s*\d+|Episode\s*\d+|EP\.?\s*\d+|#\d+)/;
@@ -213,7 +216,7 @@
 
     extractBrowsing() {
       const path = location.pathname;
-      let page = 'ブラウジング中';
+      let page = T('page.browsing');
       let detail = '';
       let banner = '';
       const keyArt = keyArtImage();
@@ -222,48 +225,48 @@
 
       // 작품 상세: /series/{slug}
       if (/^\/series\/[^/]+/.test(path)) {
-        page = '作品ページ';
+        page = T('page.work');
         detail = cleanName(getPageTitle() || getH1());
         banner = keyArt;
       }
       // プラネット 상세: /planet/{slug} (slug 영문 → 디코드 불가, 제목은 헤딩/og)
       //  배너: 큰 키아트 대신 프라네트 원형 아이콘 우선 (유빈 요청)
       else if (/^\/planet\/[^/]+/.test(path)) {
-        page = 'プラネット';
+        page = T('page.planet');
         detail = cleanName(getH1() || getPageTitle());
         banner = planetIcon(detail) || keyArt;
       }
       // プラネット 목록
       else if (/^\/planet\/?$/.test(path)) {
-        page = 'プラネット一覧';
+        page = T('page.planetList');
       }
       // 작품 목록: /list/{type}
       else if (/^\/list\//.test(path)) {
-        page = '作品一覧';
+        page = T('page.workList');
         detail = cleanName(getPageTitle() || getH1());
       }
       // 마이리스트
       else if (/^\/mylist/.test(path)) {
-        page = 'マイリスト';
+        page = T('page.mylist');
       }
       // 뉴스 목록
       else if (/^\/news\/?$/.test(path)) {
-        page = 'ニュース';
+        page = T('page.news');
       }
       // 뉴스/읽을거리 상세: /contents/{id}
       else if (/^\/contents\//.test(path)) {
-        page = 'ニュース・読み物';
+        page = T('page.reading');
         detail = cleanName(getPageTitle() || getH1());
       }
       // 추천
       else if (/^\/recommend/.test(path)) {
-        page = 'おすすめ';
+        page = T('page.recommend');
       }
-      else if (path.startsWith('/search')) page = '作品を検索中';
-      else if (path.startsWith('/favorite')) page = 'お気に入り';
-      else if (path.startsWith('/faq') || path.startsWith('/guide') || path.startsWith('/howtocube')) page = 'ヘルプ';
-      else if (path.startsWith('/auth')) page = 'ログイン中';
-      else if (path === '/' || path === '') page = 'ホーム';
+      else if (path.startsWith('/search')) page = T('page.search');
+      else if (path.startsWith('/favorite')) page = T('page.favorite');
+      else if (path.startsWith('/faq') || path.startsWith('/guide') || path.startsWith('/howtocube')) page = T('page.help');
+      else if (path.startsWith('/auth')) page = T('page.login');
+      else if (path === '/' || path === '') page = T('page.home');
 
       if (detail === page) detail = '';
       return { page, detail, banner };

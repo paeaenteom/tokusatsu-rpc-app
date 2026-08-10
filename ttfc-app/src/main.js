@@ -21,6 +21,7 @@ const ExtensionBridge = require('./extension-bridge');
 const BingeLogger = require('./binge-webhook');
 const WatchHistory = require('./watch-history');
 const AppConsole = require('./app-console');
+const i18n = require('./i18n');
 const { setupProtocol, handleDeepLink, findDeepLink } = require('./protocol');
 
 // Discord 애플리케이션 ID (기본값 = TTFC 앱). 개인 설정으로 덮어쓸 수 있다.
@@ -48,6 +49,7 @@ const store = new Store({
             showButtons: true,
             timeMode: 'progress',   // progress | remaining | none
         },
+        lang: 'auto',               // auto | ko | en | ja
     },
 });
 
@@ -57,6 +59,31 @@ let tray = null;
 let discordRPC = null;
 let extensionBridge = null;
 const watchHistory = new WatchHistory();
+
+// ── 언어 ──
+//  'auto' 면 OS 언어를 따른다. app.getLocale() 은 whenReady 이후에만 정확하므로
+//  실제 값은 currentLang() 이 불릴 때마다 계산한다.
+function currentLang() {
+    let osLocale = '';
+    try { osLocale = app.getLocale(); } catch (e) { /* ready 전 */ }
+    return i18n.resolve(store.get('lang'), osLocale);
+}
+
+function T(key, vars) {
+    return i18n.t(currentLang(), key, vars);
+}
+
+// 언어가 바뀌면 이미 그려진 것들을 다시 그린다
+function applyLanguage() {
+    const lang = currentLang();
+    if (discordRPC) discordRPC.setLang(lang);
+    if (extensionBridge) extensionBridge.setLang(lang);   // 확장에도 알려준다
+    rebuildTrayMenu();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('lang-changed', { lang, strings: i18n.table(lang) });
+    }
+    log.info('[i18n] 언어 적용:', lang, `(설정: ${store.get('lang')})`);
+}
 
 // ── RPC 설정 헬퍼 ──
 function rpcSettings() {
@@ -134,19 +161,19 @@ function rebuildTrayMenu() {
     const menu = Menu.buildFromTemplate([
         { label: '🎬 TOKU RPC', enabled: false },
         { type: 'separator' },
-        { label: '창 열기', click: () => showWindow() },
+        { label: T('tray.open'), click: () => showWindow() },
         {
-            label: rpcOn ? '✓ RPC 켜짐' : 'RPC 꺼짐',
+            label: rpcOn ? T('tray.rpcOn') : T('tray.rpcOff'),
             click: () => toggleRPC(),
         },
-        { label: '🔁 Discord 재연결', click: () => reconnectRPC() },
+        { label: T('tray.reconnect'), click: () => reconnectRPC() },
         { type: 'separator' },
         {
-            label: isAutoStartEnabled() ? '✓ 부팅 시 자동 시작' : '부팅 시 자동 시작',
+            label: isAutoStartEnabled() ? T('tray.autoStartOn') : T('tray.autoStartOff'),
             click: () => toggleAutoStart(),
         },
         { type: 'separator' },
-        { label: '종료', click: () => { app.isQuitting = true; app.quit(); } },
+        { label: T('tray.quit'), click: () => { app.isQuitting = true; app.quit(); } },
     ]);
     tray.setContextMenu(menu);
 }
@@ -269,7 +296,23 @@ ipcMain.handle('rpc-get-settings', () => ({
     showButtons: store.get('rpc.showButtons'),
     timeMode: store.get('rpc.timeMode'),
     version: app.getVersion(),
+    lang: store.get('lang'),          // 설정값 그대로 ('auto' 포함)
 }));
+
+// ── 언어 ──
+ipcMain.handle('i18n-get', () => ({
+    setting: store.get('lang'),
+    lang: currentLang(),
+    langs: i18n.LANGS,
+    strings: i18n.table(currentLang()),
+}));
+
+ipcMain.handle('i18n-set', (e, setting) => {
+    const next = (setting === 'auto' || i18n.LANGS.includes(setting)) ? setting : 'auto';
+    store.set('lang', next);
+    applyLanguage();
+    return { setting: next, lang: currentLang(), strings: i18n.table(currentLang()) };
+});
 
 ipcMain.handle('rpc-set-setting', (e, key, value) => {
     const allowed = ['showSeries', 'showEpisode', 'showThumbnail', 'showButtons', 'timeMode'];
@@ -316,8 +359,11 @@ if (!gotLock) {
             }
         };
 
+        log.info('[i18n] OS 언어:', app.getLocale(), '→', currentLang());
+
         // Discord RPC
         discordRPC = new DiscordRPC(DISCORD_APP_ID);
+        discordRPC.setLang(currentLang());
         discordRPC.onStatusChange = () => pushStatus();
         if (store.get('rpc.enabled') && store.get('rpc.autoConnect')) {
             discordRPC.connect();
@@ -325,6 +371,7 @@ if (!gotLock) {
 
         // 크롬 확장 브릿지 (+정주행 웹훅 로거)
         extensionBridge = new ExtensionBridge(discordRPC, rpcSettings, new BingeLogger(discordRPC));
+        extensionBridge.setLang(currentLang());   // 확장이 붙으면 이 언어를 알려준다
         extensionBridge.onConnectionChange = () => pushStatus();
         extensionBridge.start();
 

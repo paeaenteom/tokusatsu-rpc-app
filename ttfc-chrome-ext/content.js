@@ -19,6 +19,9 @@
 
   const LOG = (...a) => console.log('[TOKU RPC]', ...a);
 
+  // 화면에 보이는 문구는 i18n 을 거친다 (i18n.js 가 manifest 순서상 먼저 로드됨)
+  const T = (key, vars) => (self.TOKU_I18N ? self.TOKU_I18N.t(key, vars) : key);
+
   // ── 썸네일 바이트 추출 (디스코드가 직접 못 불러오는 이미지 전용) ──
   //  imagination CDN(static-constents)과 TTFC 메인 도메인(pc.tokusatsu-fc.jp)은
   //  외부 서버 페치를 차단해 디스코드 프록시가 이미지를 못 불러온다("?").
@@ -118,9 +121,9 @@
       bingeMode = !!ch.bingeMode.newValue;
       LOG('정주행 모드:', bingeMode ? 'ON' : 'OFF');
       if (bingeMode) {
-        bingeBadge('📺 정주행 모드 ON', { hold: 3000 });
+        bingeBadge(T('badge.on'), { hold: 3000 });
       } else {
-        bingeBadge('정주행 모드 OFF', { force: true, color: '#8a93a6', keep: false, hold: 2000 });
+        bingeBadge(T('badge.off'), { force: true, color: '#8a93a6', keep: false, hold: 2000 });
         bingeFsRestore();
       }
       sendUpdate(true);
@@ -130,8 +133,8 @@
   // 영상 페이지면 "정주행 대기 중" 상태를 배지로 표시
   function bingeStatusBadge() {
     if (!bingeMode) return;
-    if (SITE.isPlaybackUrl()) bingeBadge('📺 정주행 ON · 끝나면 다음 화', { hold: 3500 });
-    else bingeBadge('📺 정주행 ON', { hold: 3500 });
+    if (SITE.isPlaybackUrl()) bingeBadge(T('badge.onNext'), { hold: 3500 });
+    else bingeBadge(T('badge.onShort'), { hold: 3500 });
   }
 
   // ── 화면 표시 배지 (정주행이 켜졌는지·무엇을 하는지 눈으로 보이게) ──
@@ -194,7 +197,7 @@
     try { sessionStorage.setItem('toku_binge_fs', '1'); } catch (e) {}
     SITE.bingeFullscreen();
     scheduleCursorHide();   // 전체화면 진입 직후부터 커서 숨김 타이머 시작
-    bingeBadge('⛶ 전체화면 유지', { force: true, hold: 2500 });
+    bingeBadge(T('badge.fullscreen'), { force: true, hold: 2500 });
   }
 
   document.addEventListener('fullscreenchange', () => {
@@ -320,7 +323,7 @@
         if (ov) {
           clearInterval(wait);
           LOG('정주행: 오버레이 감지 → 즉시 재생 (플레이어가 진행)');
-          bingeBadge('▶ 다음 화 재생', { force: true, hold: 4000 });
+          bingeBadge(T('badge.playNext'), { force: true, hold: 4000 });
           SITE.clickPlayNow();
         } else if (waited >= 6000) {        // 연속재생 꺼져 있음 → 직접 이동
           clearInterval(wait);
@@ -362,18 +365,18 @@
     if (next) {
       LOG('정주행: 다음 화 이동 →', next);
       bingeMoving = true;
-      bingeBadge('▶ 다음 화로 이동 중…', { force: true, hold: 8000 });
+      bingeBadge(T('badge.moving'), { force: true, hold: 8000 });
       try { sessionStorage.setItem('toku_binge_next', '1'); } catch (e) {}
       setTimeout(() => { location.href = next; }, 800);  // 배지가 보이도록 아주 짧게 지연
       return true;
     } else if (o.test) {
       // 테스트 실행은 실제 종료 처리(웹훅·모드 OFF)를 하지 않는다
       LOG('정주행 테스트: 다음 화를 찾지 못함');
-      bingeBadge('다음 화 없음 (마지막 화로 보임)', { force: true, color: '#8a93a6', hold: 5000 });
+      bingeBadge(T('badge.noNext'), { force: true, color: '#8a93a6', hold: 5000 });
       return false;
     } else {
       LOG('정주행: 마지막 화 완료 — 종료');
-      bingeBadge('🏁 정주행 끝! (마지막 화)', { force: true, hold: 10000 });
+      bingeBadge(T('badge.bingeEnd'), { force: true, hold: 10000 });
       let seriesName = '';
       try { seriesName = (SITE.extractVideo() || {}).seriesName || ''; } catch (e) {}
       chrome.runtime.sendMessage({ action: 'BINGE_END', seriesName, site: SITE.id }).catch(() => {});
@@ -390,7 +393,7 @@
       sessionStorage.removeItem('toku_binge_next');
     } catch (e) { return; }
     LOG('정주행: 다음 화 로드됨 — 재생 보장 시작');
-    bingeBadge('▶ 다음 화 재생 준비 중…', { force: true, hold: 6000 });
+    bingeBadge(T('badge.preparing'), { force: true, hold: 6000 });
     let tries = 0;
     const timer = setInterval(() => {
       tries++;
@@ -402,7 +405,7 @@
       if (v && !v.paused && !v.ended) {
         clearInterval(timer);
         LOG('정주행: 재생 확인');
-        bingeBadge('📺 정주행 ON · 재생 중', { hold: 3000 });
+        bingeBadge(T('badge.onPlaying'), { hold: 3000 });
         if (SITE.id === 'imagination' && typeof SITE.bingeFullscreen === 'function') {
           chrome.runtime.sendMessage({ action: 'BINGE_FULLSCREEN' }).catch(() => {});
           try { sessionStorage.setItem('toku_binge_fs', '1'); } catch (e) {}
@@ -462,7 +465,7 @@
       type: 'BROWSING',
       site: SITE.id,
       siteName: SITE.siteName,
-      page: browsing.page || 'ブラウジング中',
+      page: browsing.page || T('page.browsing'),
       detail: browsing.detail || '',
       banner: browsing.banner || '',
       url: location.href,
@@ -567,9 +570,9 @@
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg && msg.action === 'TEST_NEXT') {
       // 팝업의 테스트 버튼 — 영상 끝을 기다리지 않고 같은 경로를 즉시 실행
-      if (!SITE.isPlaybackUrl()) { sendResponse({ ok: false, reason: '영상 페이지가 아닙니다' }); return true; }
+      if (!SITE.isPlaybackUrl()) { sendResponse({ ok: false, reason: T('popup.testNotPlayback') }); return true; }
       const ok = onVideoEnded({ test: true });
-      sendResponse({ ok: !!ok, reason: ok ? '' : '다음 화를 찾지 못했습니다 (마지막 화?)' });
+      sendResponse({ ok: !!ok, reason: ok ? '' : T('popup.testNotFoundLast') });
       return true;
     }
     if (msg && msg.action === 'RESET_THUMBS') {

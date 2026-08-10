@@ -43,4 +43,5 @@ const out = [
 const dest = process.argv[2] || path.join(DIR, '..', 'dist-release', 'release-body.md');
 fs.mkdirSync(path.dirname(dest), { recursive: true });
 fs.writeFileSync(dest, out, 'utf8');   // BOM 없이
-console.error(`릴리스 본문: ${dest} (${out.split('\n').length}줄)`);
+// stdout 으로 낸다 — PowerShell 은 네이티브 명령의 stderr 를 오류로 취급한다
+console.log(`릴리스 본문: ${dest} (${out.split('\n').length}줄)`);

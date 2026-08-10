@@ -1,0 +1,55 @@
+// 한국어 — 원본. 다른 언어 파일은 이 파일과 키가 정확히 같아야 한다.
+// {이름} 은 실행 중에 값으로 치환된다. 번역할 때 이름을 바꾸면 안 된다.
+module.exports = {
+    // ── 트레이 메뉴 ──
+    'tray.open': '창 열기',
+    'tray.rpcOn': '✓ RPC 켜짐',
+    'tray.rpcOff': 'RPC 꺼짐',
+    'tray.reconnect': '🔁 Discord 재연결',
+    'tray.autoStartOn': '✓ 부팅 시 자동 시작',
+    'tray.autoStartOff': '부팅 시 자동 시작',
+    'tray.quit': '종료',
+
+    // ── 미니 창 ──
+    'win.ext': '크롬 확장',
+    'win.extWaiting': '대기 중',
+    'win.extConnected': '연결됨 ({n})',
+    'win.dcConnected': '연결됨',
+    'win.dcDisconnected': '연결 안 됨',
+    'win.nowShowing': '현재 표시 중',
+    'win.nothing': '표시 중인 내용 없음',
+    'win.settings': 'RPC 표시 설정',
+    'win.showSeries': '작품명 표시',
+    'win.showEpisode': '에피소드 표시',
+    'win.showThumbnail': '썸네일 표시',
+    'win.showButtons': '버튼 표시',
+    'win.timeMode': '시간 표시',
+    'win.timeProgress': '경과 + 남은 시간',
+    'win.timeRemaining': '남은 시간만',
+    'win.timeNone': '표시 안 함',
+    'win.language': '언어',
+    'win.langAuto': '시스템 언어',
+    'win.rpcOn': 'RPC 켜짐',
+    'win.rpcOff': 'RPC 꺼짐',
+    'win.reconnect': '🔁 Discord 재연결',
+    'win.console': '콘솔',
+    'win.copy': '복사',
+    'win.copied': '복사됨!',
+    'win.clear': '지우기',
+    'win.timeLeft': '{t} 남음',
+    'win.timeElapsed': '{t} 경과',
+
+    // ── Discord 프로필에 표시되는 문구 ──
+    'rpc.viewOnSite': '사이트에서 보기',
+    'rpc.watching': '{site} 시청 중',
+    'rpc.paused': '{site}・일시정지',
+    'rpc.browsing': '둘러보는 중',
+
+    // ── 정주행 웹훅 ──
+    'hook.episode': '에피소드',
+    'hook.bingeMode': '정주행 모드',
+    'hook.start': '▶ {time} — **{ep}** 시청 시작',
+    'hook.end': '🏁 {time} — **{name}** 정주행 끝!',
+    'hook.endTitle': '{name} 완주',
+    'hook.endDesc': '마지막 화까지 시청 완료',
+};

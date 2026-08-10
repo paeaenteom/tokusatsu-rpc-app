@@ -12,6 +12,11 @@ contextBridge.exposeInMainWorld('rpcAPI', {
   reconnect: () => ipcRenderer.invoke('rpc-reconnect'),
   onStatus: (cb) => ipcRenderer.on('rpc-status-update', (e, s) => cb(s)),
 
+  // 언어
+  getI18n: () => ipcRenderer.invoke('i18n-get'),
+  setLang: (setting) => ipcRenderer.invoke('i18n-set', setting),
+  onLangChange: (cb) => ipcRenderer.on('lang-changed', (e, p) => cb(p)),
+
   // 콘솔 (에러 확인용)
   getConsole: () => ipcRenderer.invoke('console-get'),
   clearConsole: () => ipcRenderer.invoke('console-clear'),

@@ -1,0 +1,55 @@
+// 日本語 — 韓国語版 (ko.js) の翻訳。キーは ko.js と完全に一致させること (順序・綴り・数)。
+// {名前} は実行時に値へ置き換わる。翻訳時に名前を変えたり消したりしてはいけない。
+module.exports = {
+    // ── トレイメニュー ──
+    'tray.open': 'ウィンドウを開く',
+    'tray.rpcOn': '✓ RPC オン',
+    'tray.rpcOff': 'RPC オフ',
+    'tray.reconnect': '🔁 Discord に再接続',
+    'tray.autoStartOn': '✓ PC 起動時に自動起動',
+    'tray.autoStartOff': 'PC 起動時に自動起動',
+    'tray.quit': '終了',
+
+    // ── ミニウィンドウ ──
+    'win.ext': 'Chrome 拡張機能',
+    'win.extWaiting': '待機中',
+    'win.extConnected': '接続済み ({n})',
+    'win.dcConnected': '接続済み',
+    'win.dcDisconnected': '未接続',
+    'win.nowShowing': '現在表示中',
+    'win.nothing': '表示中の内容はありません',
+    'win.settings': 'RPC 表示設定',
+    'win.showSeries': '作品名を表示',
+    'win.showEpisode': 'エピソードを表示',
+    'win.showThumbnail': 'サムネイルを表示',
+    'win.showButtons': 'ボタンを表示',
+    'win.timeMode': '時間の表示',
+    'win.timeProgress': '経過時間 + 残り時間',
+    'win.timeRemaining': '残り時間のみ',
+    'win.timeNone': '表示しない',
+    'win.language': '言語',
+    'win.langAuto': 'システムの言語',
+    'win.rpcOn': 'RPC オン',
+    'win.rpcOff': 'RPC オフ',
+    'win.reconnect': '🔁 Discord に再接続',
+    'win.console': 'コンソール',
+    'win.copy': 'コピー',
+    'win.copied': 'コピー済み!',
+    'win.clear': 'クリア',
+    'win.timeLeft': '残り {t}',
+    'win.timeElapsed': '{t} 経過',
+
+    // ── Discord のプロフィールに表示される文言 ──
+    'rpc.viewOnSite': 'サイトで見る',
+    'rpc.watching': '{site} 視聴中',
+    'rpc.paused': '{site}・一時停止中',
+    'rpc.browsing': '閲覧中',
+
+    // ── 一気見ウェブフック ──
+    'hook.episode': 'エピソード',
+    'hook.bingeMode': '一気見モード',
+    'hook.start': '▶ {time} — **{ep}** 視聴開始',
+    'hook.end': '🏁 {time} — **{name}** 一気見終了!',
+    'hook.endTitle': '{name} 完走',
+    'hook.endDesc': '最終話まで視聴完了',
+};
