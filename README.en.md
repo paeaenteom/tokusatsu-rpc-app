@@ -71,6 +71,15 @@ Click the extension icon to turn on **Binge Mode**. From then on:
 > **Pausing does not end a binge.** Stop for a bit, switch tabs, come back much later —
 > Binge Mode stays on. It only ends when you *finish the last episode* or *toggle it off yourself*.
 
+### Language
+
+Pick **한국어 · English · 日本語**. The default is **your system language**.
+Change it in the app's window, or in the extension's popup.
+
+Leave the extension on "System language" and it follows whatever the app is set to, so
+changing one changes both. What shows up on Discord and what goes into the binge log
+use the same language.
+
 ---
 
 ## Binge log (webhook) setup — optional
