@@ -68,6 +68,18 @@ function clamp(str, max = 128) {
     return str.length > max ? str.slice(0, max - 1) + '…' : str;
 }
 
+// Discord 는 details/state 가 2글자 미만이면 활동 전체를 거부한다.
+//  (실제로 겪음: 페이지 이름을 한국어로 바꾸자 '홈' 1글자가 되어 브라우징 표시가 통째로 막혔다.
+//   조용히 거부되고 프로필에는 아무것도 안 뜬다.)
+//  번역이 짧아져도 표시가 죽지 않도록, 짧으면 사이트 이름을 덧붙여 늘린다.
+function atLeast2(str, pad) {
+    const s = (str || '').trim();
+    if (s.length >= 2) return s;
+    if (!s) return undefined;                 // 빈 값은 아예 안 보내는 게 맞다
+    const suffix = (pad || '').trim();
+    return suffix ? `${s} · ${suffix}` : `${s} `.padEnd(2, ' ');
+}
+
 function isHttpUrl(u) {
     return typeof u === 'string' && /^https?:\/\//i.test(u);
 }
@@ -567,8 +579,8 @@ class DiscordRichPresence {
             : this._resolveImage(s.thumbnail, site.logo);
 
         const activity = {
-            details: clamp(seriesName),                            // 3줄: 작품명 (큰 글씨)
-            state: episodeText ? clamp(episodeText) : undefined,   // 4줄: 에피소드
+            details: atLeast2(clamp(seriesName), siteName),                    // 3줄: 작품명 (큰 글씨)
+            state: episodeText ? atLeast2(clamp(episodeText), siteName) : undefined,  // 4줄: 에피소드
             largeImageKey: largeImage,
             largeImageText: clamp(seriesName),
             smallImageKey: s.isPlaying ? site.play : site.pause,
@@ -608,8 +620,8 @@ class DiscordRichPresence {
 
         // details: 페이지 타입 / state: 페이지 상세 (없으면 생략)
         // 확장이 페이지 종류를 못 보냈을 때만 쓰는 대체값 (보통은 확장 쪽 번역이 온다)
-        const details = pageTitle || this._t('rpc.browsing');
-        const state = pageDetail ? clamp(pageDetail) : undefined;
+        const details = atLeast2(pageTitle || this._t('rpc.browsing'), siteName);
+        const state = pageDetail ? atLeast2(clamp(pageDetail), siteName) : undefined;
 
         // 큰 이미지: 페이지 배너(작품 비주얼/시리즈 배너/프라네트 아이콘) → 사이트 로고
         const largeImage = this._resolveImage(pageBanner, site.logo);

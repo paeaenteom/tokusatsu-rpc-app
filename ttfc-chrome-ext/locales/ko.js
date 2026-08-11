@@ -53,7 +53,7 @@
   'page.notice': '공지사항',
   'page.help': '도움말',
   'page.new': '신착',
-  'page.home': '홈',
+  'page.home': '메인',   // ⚠ Discord 는 1글자 문구를 거부한다 ('홈' 불가)
   'page.planet': '프라네트',
   'page.planetList': '프라네트 목록',
   'page.workList': '작품 목록',
