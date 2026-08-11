@@ -50,6 +50,19 @@ const SITES = {
         play: 'play',
         pause: 'pause',
     },
+    // ── 디즈니+ (실험) ──
+    //  아직 검증 중이라 전용 테스트 애플리케이션을 쓴다. 기존 두 사이트와 앱이
+    //  분리돼 있어 여기서 뭘 잘못 띄워도 TTFC/IMAGINATION 표시에는 영향이 없다.
+    //  안정화되면 정식 앱으로 옮긴다.
+    //  에셋: disney__logo(밑줄 2개) / marvel_logo / play / pause
+    disneyplus: {
+        name: 'Disney+',
+        homeUrl: 'https://www.disneyplus.com/',
+        appId: '1536675829914931290',
+        logo: 'disney__logo',
+        play: 'play',
+        pause: 'pause',
+    },
 };
 
 // 애플리케이션 ID — 기본값은 위 상수, 개인 설정이 있으면 그쪽을 우선한다

@@ -428,6 +428,13 @@
     const video = SITE.getVideoElement();
     const hasRealVideo = video && video.readyState > 0 && video.duration > 0 && isFinite(video.duration);
 
+    // 사이트가 재생 정보를 직접 주는 경우.
+    //  디즈니+ 는 MSE 스트리밍이라 video.duration 이 Infinity 라서 위 판정을 통과하지 못한다.
+    //  (총 길이는 플레이어 상태 객체에만 있다 — 추출기 주석 참고)
+    //  주지 않는 사이트는 null 이므로 기존 동작 그대로다.
+    const pb = (typeof SITE.getPlayback === 'function') ? SITE.getPlayback() : null;
+    const timeOf = (k, fallback) => (pb ? Math.floor(pb[k] || 0) : fallback);
+
     // 영상 페이지 URL이면 video 로드 전이라도 '시청 중'으로 표시
     //  → 들어가는 순간 작품/에피소드 정보(og:title 기반)가 뜨고,
     //    실제로 재생하면 시간바 + 재생상태가 채워진다.
@@ -443,12 +450,12 @@
         seriesName: info.seriesName || SITE.siteName,
         episodeTitle: epTitle,
         episodeNumber: info.episodeNumber || '',
-        currentTime: hasRealVideo ? Math.floor(video.currentTime) : 0,
-        duration: hasRealVideo ? Math.floor(video.duration) : 0,
+        currentTime: timeOf('currentTime', hasRealVideo ? Math.floor(video.currentTime) : 0),
+        duration: timeOf('duration', hasRealVideo ? Math.floor(video.duration) : 0),
         thumbnail: info.thumbnail || '',
         // video가 로드돼 실제 재생 중일 때만 재생 상태 true
-        isPlaying: hasRealVideo && !video.paused && !video.ended,
-        loaded: hasRealVideo,
+        isPlaying: pb ? !!pb.isPlaying : (hasRealVideo && !video.paused && !video.ended),
+        loaded: pb ? !!pb.loaded : hasRealVideo,
         binge: bingeMode,
         url: location.href,
       };

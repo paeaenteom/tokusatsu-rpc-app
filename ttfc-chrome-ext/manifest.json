@@ -11,7 +11,8 @@
   ],
   "host_permissions": [
     "https://pc.tokusatsu-fc.jp/*",
-    "https://imagination.m-78.jp/*"
+    "https://imagination.m-78.jp/*",
+    "https://www.disneyplus.com/*"
   ],
   "content_scripts": [
     {
@@ -38,6 +39,30 @@
         "locales/ja.js",
         "i18n.js",
         "extractors/imagination-extract.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.disneyplus.com/*"
+      ],
+      "js": [
+        "extractors/disneyplus-main.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.disneyplus.com/*"
+      ],
+      "js": [
+        "locales/ko.js",
+        "locales/en.js",
+        "locales/ja.js",
+        "i18n.js",
+        "extractors/disneyplus-extract.js",
         "content.js"
       ],
       "run_at": "document_idle"
