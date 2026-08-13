@@ -60,6 +60,7 @@
   'page.movies': '영화 목록',
   'page.originals': '오리지널',
   'page.watchlist': '관심 콘텐츠',
+  'page.brand': '브랜드',
   'page.mylist': '마이리스트',
   'page.news': '뉴스',
   'page.reading': '뉴스·읽을거리',

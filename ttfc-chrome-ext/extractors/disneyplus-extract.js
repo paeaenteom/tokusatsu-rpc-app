@@ -46,6 +46,24 @@
   // 로케일 접두어(/ko-kr)를 걷어낸 경로
   const bare = () => path().replace(/^\/[a-z]{2}(-[a-z]{2})?(?=\/|$)/i, '') || '/';
 
+  // /browse 아래에서 브랜드 허브가 아닌, 이름이 정해진 목록 경로들
+  const LIST_ROUTES = ['movies', 'series', 'originals', 'watchlist', 'search'];
+
+  // Discord 에 직접 올린 에셋이 있는 브랜드만 여기에 적는다.
+  //  나머지는 사이트의 브랜드 로고 이미지를 그대로 쓴다 — 그 CDN 이 인증 없이
+  //  열려 있어 디스코드가 바로 불러오므로 업로드할 이유가 없다.
+  //  나중에 다른 브랜드를 올리면 한 줄만 추가하면 된다.
+  const BRAND_ASSET = {
+    marvel: 'marvel_logo',
+  };
+
+  // 브랜드 허브 페이지의 로고 이미지 (alt 에 브랜드명이 들어있다)
+  function brandLogoUrl() {
+    const el = document.querySelector('[data-testid="he-title-treatment"]');
+    const img = el && (el.tagName === 'IMG' ? el : el.querySelector('img'));
+    return img ? (img.currentSrc || img.src || '') : '';
+  }
+
   // "시즌 1: 1회 새벽 3시" → { number: '시즌 1: 1회', title: '새벽 3시' }
   //  로케일마다 형식이 다르므로(영어는 "S1:E1 3 AM") 콜론 뒤 첫 덩어리를 번호로 본다.
   //  못 쪼개면 통째로 번호 자리에 넣는다 — 정보를 잃는 것보다 낫다.
@@ -126,6 +144,18 @@
       else if (/^\/browse\/search/.test(p)) page = T('page.search');
       else if (/^\/browse\/?$/.test(p)) page = T('page.workList');
       else if (p === '/home' || p === '/') page = T('page.home');
+      else {
+        // 남은 /browse/{슬러그} 는 브랜드 허브로 본다
+        //  (disney · pixar · marvel · star-wars · national-geographic · disneyplus · star …)
+        //  목록 경로는 위에서 이미 걸러졌으므로, 새 브랜드가 생겨도 자동으로 잡힌다.
+        const m = p.match(/^\/browse\/([a-z0-9-]+)\/?$/);
+        if (m && !LIST_ROUTES.includes(m[1])) {
+          page = T('page.brand');
+          // 브랜드 이름은 걸러내지 않는다 — Disney+ 허브는 브랜드명이 실제로 "Disney+" 다
+          detail = docName;                                 // "마블" · "픽사" · "Disney+"
+          banner = BRAND_ASSET[m[1]] || brandLogoUrl();     // 올린 에셋 우선, 없으면 사이트 로고
+        }
+      }
 
       if (detail === page) detail = '';
       return { page, detail, banner };

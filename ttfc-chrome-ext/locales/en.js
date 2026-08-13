@@ -60,6 +60,7 @@
   'page.movies': 'Movies',
   'page.originals': 'Originals',
   'page.watchlist': 'Watchlist',
+  'page.brand': 'Brand',
   'page.mylist': 'My List',
   'page.news': 'News',
   'page.reading': 'News·Features',
