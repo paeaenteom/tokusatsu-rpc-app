@@ -72,6 +72,8 @@
     for (const a of document.querySelectorAll('a[href*="/play/"]')) {
       const id = playIdOf(a.getAttribute('href'));
       if (!id || epThumbs.has(id)) continue;
+      // 큰 "재생" 버튼도 /play/ 링크지만 이미지가 없다 — 그건 건너뛰고
+      // 이미지를 가진 에피소드 카드만 담는다
       const img = a.querySelector('img');
       const src = img && (img.currentSrc || img.src);
       if (!src || !/bamgrid/.test(src)) continue;
@@ -79,7 +81,35 @@
       added++;
     }
     if (added) persistThumbs();
+    return added;
   }
+
+  // 카드가 화면에 붙는 "순간" 잡는다.
+  //  1초 주기 수집만으로는 목록을 스쳐 지나가면 놓친다. 실제로 작품 페이지에서
+  //  바로 재생을 누르면 에피소드 목록이 렌더되기 전에 넘어가 버려서
+  //  아무것도 못 담은 채 시리즈 아트로 떨어졌다.
+  //  디즈니+ 는 SPA 라 이 관찰자는 문서가 살아있는 동안 계속 동작한다.
+  let harvestTimer = null;
+  const observer = new MutationObserver(() => {
+    if (harvestTimer) return;                 // 폭주하는 DOM 변경을 묶어서 처리
+    harvestTimer = setTimeout(() => {
+      harvestTimer = null;
+      if (!harvestEpisodeThumbs()) return;
+      // 지금 보고 있는 화의 썸네일을 방금 얻었다면 바로 갈아끼운다
+      // bare() 는 아래에서 선언되므로 여기선 경로를 직접 본다 (선언 순서 의존 제거)
+      if (/\/play\//.test(location.pathname) && epThumbs.has(playIdOf(location.pathname)) && self.TOKU_NUDGE) {
+        self.TOKU_NUDGE('에피소드 썸네일 확보');
+      }
+    }, 300);
+  });
+  try {
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  } catch (e) { /* 관찰 실패해도 주기 수집이 남아 있다 */ }
+
+  // ⚠ 관찰자는 "변경"에만 반응한다. 스크립트가 붙는 시점에 카드가 이미 그려져
+  //   있으면 변경이 일어나지 않아 영영 못 잡는다(실측으로 확인). 처음 한 번은
+  //   직접 훑어야 한다. 아직 안 그려졌으면 관찰자가 이어받는다.
+  harvestEpisodeThumbs();
 
   // ── 페이지 월드에서 오는 재생 상태 ──
   let snap = null;
