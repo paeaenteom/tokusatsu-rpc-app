@@ -93,7 +93,6 @@
   function tick() {
     let snap = null;
     try { snap = snapshot(); } catch (e) { /* 사이트 구조 변경 — 조용히 무시 */ }
-    const json = snap ? JSON.stringify(snap) : '';
     // 값이 그대로면 보내지 않는다 (at 은 비교에서 제외)
     const cmp = snap ? JSON.stringify({ ...snap, at: 0 }) : '';
     if (cmp === lastJson) return;

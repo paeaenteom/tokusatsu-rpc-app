@@ -29,6 +29,10 @@ class ExtensionBridge {
         this._started = false;
         this.onConnectionChange = null;  // 미니 창용 콜백
         this.lang = 'ko';                // 확장에 알려줄 앱 언어
+        // 로그 중복 제거는 사이트별로 해야 한다. 하나로 두면 두 사이트를 같이 볼 때
+        // 키가 번갈아 바뀌어 모든 메시지가 로그를 남긴다(초당 2줄).
+        this._videoLogKeys = new Map();
+        this._browsingLogKeys = new Map();
     }
 
     // 앱 언어를 확장에 알린다. 확장 언어 설정이 '시스템 언어'면 이 값을 따라간다.
@@ -60,7 +64,7 @@ class ExtensionBridge {
         this._started = true;
 
         try {
-            this.wss = new WebSocketServer({ port: PORT, host: '127.0.0.1' });
+            this.wss = new WebSocketServer({ port: PORT, host: '127.0.0.1', maxPayload: 16 * 1024 * 1024 });
 
             this.wss.on('listening', () => {
                 log.info(`[Bridge] WebSocket 서버 시작: ws://127.0.0.1:${PORT}`);
@@ -176,8 +180,8 @@ class ExtensionBridge {
         if (msg.type === 'VIDEO' || (msg.type === 'SET_ACTIVITY' && msg.seriesName)) {
             // 로그는 내용이 바뀔 때만 (시간 경과만으로 2초마다 찍히던 스팸 제거)
             const logKey = [msg.site, msg.seriesName, msg.episodeNumber, msg.episodeTitle, msg.isPlaying].join('|');
-            if (logKey !== this._lastVideoLogKey) {
-                this._lastVideoLogKey = logKey;
+            if (logKey !== this._videoLogKeys.get(msg.site)) {
+                this._videoLogKeys.set(msg.site, logKey);
                 log.info(`[Bridge] VIDEO ← ${msg.site || 'ttfc'} | ${msg.seriesName} ${msg.episodeNumber || ''} ${msg.episodeTitle || ''} (${msg.currentTime || 0}/${msg.duration || 0}s ${msg.isPlaying ? '▶' : '⏸'})`);
             }
             this._requestThumbIfNeeded(msg.thumbnail, ws);
@@ -213,8 +217,8 @@ class ExtensionBridge {
         // ── 브라우징 중 ──
         if (msg.type === 'BROWSING') {
             const logKey = [msg.site, msg.page, msg.detail, msg.url].join('|');
-            if (logKey !== this._lastBrowsingLogKey) {
-                this._lastBrowsingLogKey = logKey;
+            if (logKey !== this._browsingLogKeys.get(msg.site)) {
+                this._browsingLogKeys.set(msg.site, logKey);
                 log.info(`[Bridge] BROWSING ← ${msg.site || 'ttfc'} | ${msg.page}${msg.detail ? ' / ' + msg.detail : ''}`);
             }
             this._requestThumbIfNeeded(msg.banner, ws);

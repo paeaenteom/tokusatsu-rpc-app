@@ -1,8 +1,8 @@
-The first beta of a tool that shows what tokusatsu you're watching on Discord and keeps a binge log.
+Disney+ support and multi-language are in, and idle memory is way down.
 
 ## Install
 
-Just grab **`TOKU-RPC-Setup-0.1.0-beta.exe`** below and run it — that one file is all you need.
+Just grab **`TOKU-RPC-Setup-0.2.0-beta.exe`** below and run it — that one file is all you need.
 The app and the browser extension are installed in one go. There's nothing else to download.
 
 - In the installer window, just **check off the browsers you want the extension in**
@@ -12,10 +12,37 @@ The app and the browser extension are installed in one go. There's nothing else 
 - After installing, **quit your browser completely and start it again**
   (Make sure it's not still running in the system tray, or the extension won't take effect)
 
+## What's new in 0.2
+
+### Disney+ support *(experimental)*
+- Shows the title · season/episode · episode name · elapsed time · **episode thumbnail**
+- Brand pages too (Disney · PIXAR · MARVEL · STAR WARS · National Geographic)
+- Still being verified, so it uses its own Discord application — if something goes wrong
+  there, TTFC and IMAGINATION are unaffected
+
+### Several sites at once
+- Before, only one site could show at a time, and it flickered while deciding which one
+- Now every site you have open shows on your profile. Opening the same site in multiple
+  tabs still won't flicker
+
+### Memory and responsiveness
+- Sitting in the tray now uses **177 MB instead of 310 MB** — the window isn't created
+  until you actually open it
+- The once-a-second redraw and log traffic stop while the window is closed. Opening it
+  brings everything up to date immediately
+- State changes reach Discord right away instead of waiting for the next tick
+
+### Also
+- Fixed the taskbar icon showing Electron's default icon
+- Fixed the tray icon looking like a smudge (it now uses the icon made for that size)
+- Fixed the Korean home page showing nothing on Discord
+  (Discord rejects text shorter than two characters)
+
 ## Main features
 
 - While you're watching, Discord shows the **title · episode · elapsed time · thumbnail**
-- Automatically switches which Discord application it uses depending on which site you're on (TTFC / IMAGINATION)
+- Automatically switches which Discord application it uses depending on which site you're on
+  (TTFC / IMAGINATION / Disney+)
 - **Binge Mode** — when a video plays to the end, it moves to the next episode automatically and stays fullscreen
   - Pausing does not end a binge
 - Sends your binge log to a Discord webhook *(optional — see the README)*
@@ -28,7 +55,7 @@ The app and the browser extension are installed in one go. There's nothing else 
 
 | File | What it is |
 |---|---|
-| `TOKU-RPC-Setup-0.1.0-beta.exe` | **This is the only one you need** (app bundled inside) |
+| `TOKU-RPC-Setup-0.2.0-beta.exe` | **This is the only one you need** (app bundled inside) |
 | `toku-rpc-extension.crx`, `update.xml` | For automatic extension installation and updates — the browser fetches these on its own |
 | `toku-rpc-extension.zip` | For installing the extension manually (only if the automatic install is blocked) |
 

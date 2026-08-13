@@ -36,6 +36,11 @@ appConsole.hookAll();
 
 log.info('=== TOKU RPC 시작 ===');
 
+// 미니 창은 400×780 짜리 정적 다크 패널이다. GPU 가속으로 얻을 게 없는데
+// 창을 안 열어도 gpu-process 가 70MB 를 잡고 있었다(실측). 끄면 그만큼 돌려받는다.
+// ⚠ app.whenReady() 전에 불러야 효과가 있다.
+app.disableHardwareAcceleration();
+
 // ── Store ──
 const store = new Store({
     defaults: {
@@ -58,7 +63,10 @@ let mainWindow = null;
 let tray = null;
 let discordRPC = null;
 let extensionBridge = null;
-const watchHistory = new WatchHistory();
+// 시청기록은 ttfc:// 딥링크로만 쓰인다. 앱 시작 때 만들면 안 쓰는 사람도
+// 콜드 스타트마다 동기 파일 I/O 를 치른다 — 실제로 필요할 때 만든다.
+let watchHistory = null;
+const historyStore = () => (watchHistory || (watchHistory = new WatchHistory()));
 
 // ── 언어 ──
 //  'auto' 면 OS 언어를 따른다. app.getLocale() 은 whenReady 이후에만 정확하므로
@@ -289,7 +297,7 @@ function pushStatus() {
 // ── ttfc:// 프로토콜 (가챠 연동 → 시청기록 시작) ──
 function handleWatchStart(showId) {
     // 시청기록은 다음 단계 리뉴얼 — 지금은 조용히 기록만
-    watchHistory.startRun(showId, '', '');
+    historyStore().startRun(showId, '', '');
     log.info('[Protocol] watch start:', showId);
 }
 
@@ -350,6 +358,7 @@ if (!gotLock) {
     app.on('second-instance', (event, argv) => {
         const deepLink = findDeepLink(argv);
         if (deepLink) {
+            showWindow();   // 창을 아직 안 만들었을 수 있다 (트레이로 시작한 경우)
             const parsed = handleDeepLink(deepLink, mainWindow);
             if (parsed && parsed.type === 'watch' && parsed.showId) {
                 handleWatchStart(parsed.showId);
@@ -364,7 +373,11 @@ if (!gotLock) {
 
         // 콘솔 → 미니 창 실시간 push (에러 확인용)
         appConsole.onLine = (line) => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
+            // 창이 보일 때만 보낸다. 숨겨져 있으면 아무도 안 보는 렌더러로
+            // 줄마다 IPC + DOM 노드 생성 + 강제 레이아웃이 일어난다.
+            // 유실은 없다 — main 의 버퍼는 계속 쌓이고, 창을 열면
+            // loadConsole() 이 600줄을 통째로 다시 받아간다.
+            if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
                 mainWindow.webContents.send('console-line', line);
             }
         };
@@ -387,12 +400,17 @@ if (!gotLock) {
 
         // 부팅 자동 시작 등록(설정값 반영) + 이번 실행이 자동 시작이면 최소화로
         applyAutoStart(isAutoStartEnabled());
-        createWindow(launchedHidden());
+        // 트레이로 시작할 땐 창을 아예 만들지 않는다.
+        //  창을 숨겨만 두면 렌더러와 GPU 프로세스가 계속 떠서 170MB 를 잡고 있는다
+        //  (실측: 숨김 상태 309MB → 창 없이 139MB). 트레이나 딥링크로 열면
+        //  showWindow() 가 그때 만들고, 그 뒤로는 예전과 완전히 같다.
+        if (!launchedHidden()) createWindow(false);
         createTray();
 
         // 시작 시 ttfc:// 링크
         const startLink = findDeepLink(process.argv);
         if (startLink) {
+            showWindow();   // 창이 아직 없을 수 있다 — 딥링크는 창을 띄우는 동작이다
             const parsed = handleDeepLink(startLink, mainWindow);
             if (parsed && parsed.type === 'watch' && parsed.showId) {
                 handleWatchStart(parsed.showId);

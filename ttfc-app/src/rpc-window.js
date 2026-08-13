@@ -28,6 +28,30 @@ function applyStrings() {
 
 let LANG = 'ko';
 
+// ── 썸네일 ──
+//  URL 이 바뀔 때만 손댄다. 예전엔 매초 innerHTML 로 <img> 를 부수고 새로 만들어,
+//  같은 URL 인데도 파싱·레이아웃·페인트가 매초 일어나고 이미지 재검증까지 나갔다.
+let lastThumbKey = null;
+function setThumb(key) {
+  const k = key || '';
+  if (k === lastThumbKey) return;
+  lastThumbKey = k;
+  const box = $('prevThumb');
+  if (k.startsWith('http')) {
+    let img = box.querySelector('img');
+    if (!img) {
+      box.textContent = '';
+      img = document.createElement('img');
+      img.style.cssText = 'width:100%;height:100%;border-radius:8px;object-fit:cover';
+      img.onerror = () => { box.textContent = '🎬'; lastThumbKey = null; };
+      box.appendChild(img);
+    }
+    img.src = k;   // 속성 대입 — URL 이 HTML 로 해석되지 않는다
+  } else {
+    box.textContent = '🎬';
+  }
+}
+
 // ── 상태 갱신 ──
 function applyStatus(s) {
   // 크롬 확장
@@ -57,12 +81,7 @@ function applyStatus(s) {
     $('prevDetails').textContent = a.details || '';
     $('prevState').textContent = a.state || '';
 
-    const thumb = $('prevThumb');
-    if (a.largeImageKey && a.largeImageKey.startsWith('http')) {
-      thumb.innerHTML = `<img src="${a.largeImageKey}" style="width:100%;height:100%;border-radius:8px;object-fit:cover" onerror="this.parentElement.textContent='🎬'">`;
-    } else {
-      thumb.textContent = '🎬';
-    }
+    setThumb(a.largeImageKey);
 
     if (a.startTimestamp && a.endTimestamp) {
       const now = Math.floor(Date.now() / 1000);
@@ -229,8 +248,20 @@ window.rpcAPI.onStatus((s) => applyStatus(s));
   applyStatus(s);
 })();
 
-// 시간 표시 1초마다 갱신
+// 창이 다시 보이면 그 순간 최신으로 맞춘다 (숨김 중 건너뛴 것을 메운다).
+//  숨김 동안에는 console-line 도 안 오므로 콘솔은 통째로 다시 받는다 — 유실 없음.
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState !== 'visible') return;
+  applyStatus(await window.rpcAPI.getStatus());
+  await loadConsole();
+});
+
+// 시간 표시 1초마다 갱신.
+//  창이 안 보이면 건너뛴다 — 아무도 안 보는 화면을 위해 매초 IPC 왕복과 DOM 갱신을
+//  하고 있었다. 상태 변화 자체는 main 이 push 해 주므로(onStatus) 이 주기는
+//  시계 숫자를 굴리는 용도다.
 setInterval(async () => {
+  if (document.visibilityState === 'hidden') return;
   const s = await window.rpcAPI.getStatus();
   applyStatus(s);
 }, 1000);
