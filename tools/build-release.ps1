@@ -47,6 +47,10 @@ $unpacked = Join-Path $APP 'dist\win-unpacked'
 if (-not (Test-Path (Join-Path $unpacked 'TOKU RPC.exe'))) { throw "앱 패키징 실패: $unpacked" }
 Write-Host "  OK win-unpacked" -ForegroundColor Green
 
+# electron-builder 가 이 환경에서 exe 아이콘을 못 갈아끼운다(위 NSIS 실패와 같은 원인).
+# 그대로 두면 작업표시줄에 Electron 기본 아이콘이 뜬다.
+& (Join-Path $PSScriptRoot 'set-exe-icon.ps1')
+
 # ── 2. 확장 CRX (서명) ──────────────────────────────
 Step "확장 패킹"
 $chrome = @(
