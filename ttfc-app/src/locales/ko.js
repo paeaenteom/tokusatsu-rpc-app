@@ -39,6 +39,18 @@ module.exports = {
     'win.timeLeft': '{t} 남음',
     'win.timeElapsed': '{t} 경과',
 
+    'win.section2': '앱 설정',
+    'win.updateNotify': '새 버전 알림',
+    'win.fastStart': '로그온 즉시 시작',
+    'win.booster': '반응 속도 우선',
+    'win.boosterHint': 'CPU를 조금 더 씁니다',
+    'win.updateFound': '새 버전 {version}',
+    'win.updateGet': '받으러 가기',
+    'win.updateLatest': '최신 버전입니다',
+    'win.updateCheck': '업데이트 확인',
+    'update.title': 'TOKU RPC 새 버전',
+    'update.body': '{version} 이(가) 나왔습니다. 눌러서 받으러 가기',
+    'tray.update': '⬆ 새 버전 {version}',
     // ── Discord 프로필에 표시되는 문구 ──
     'rpc.viewOnSite': '사이트에서 보기',
     'rpc.watching': '{site} 시청 중',

@@ -39,6 +39,18 @@ module.exports = {
     'win.timeLeft': '残り {t}',
     'win.timeElapsed': '{t} 経過',
 
+    'win.section2': 'アプリ設定',
+    'win.updateNotify': '新バージョンの通知',
+    'win.fastStart': 'ログオン直後に起動',
+    'win.booster': '反応速度を優先',
+    'win.boosterHint': 'CPU を少し多く使います',
+    'win.updateFound': '新バージョン {version}',
+    'win.updateGet': '取得する',
+    'win.updateLatest': '最新版です',
+    'win.updateCheck': '更新を確認',
+    'update.title': 'TOKU RPC の新バージョン',
+    'update.body': '{version} が公開されました。クリックで取得ページへ',
+    'tray.update': '⬆ 新バージョン {version}',
     // ── Discord のプロフィールに表示される文言 ──
     'rpc.viewOnSite': 'サイトで見る',
     'rpc.watching': '{site} 視聴中',

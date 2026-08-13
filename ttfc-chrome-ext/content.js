@@ -533,8 +533,32 @@
     sendUpdate(true);
   };
 
-  // 1초 주기 — timeupdate 제거·썸네일 캐시 덕에 스캔이 가벼워져 1초로 단축 (반응속도 ↑)
-  setInterval(() => {
+  // ── 부스터 ──
+  //  앱에서 켜면 더 자주 살펴 반응이 빨라진다. 대신 CPU 를 더 쓴다.
+  //  주기를 바꾸려면 타이머를 다시 걸어야 하므로 값을 바꿀 때마다 재설치한다.
+  const TICK_NORMAL = 1000;
+  const TICK_BOOST = 300;
+  let tickMs = TICK_NORMAL;
+  let tickTimer = null;
+  function installTick() {
+    if (tickTimer) clearInterval(tickTimer);
+    tickTimer = setInterval(onTick, tickMs);
+  }
+  function applyBooster(on) {
+    const want = on ? TICK_BOOST : TICK_NORMAL;
+    if (want === tickMs) return;
+    tickMs = want;
+    installTick();
+    LOG('부스터', on ? '켜짐 (' + want + 'ms)' : '꺼짐 (' + want + 'ms)');
+  }
+  try {
+    chrome.storage.local.get('booster', (r) => applyBooster(!!(r && r.booster)));
+    chrome.storage.onChanged.addListener((ch, area) => {
+      if (area === 'local' && ch.booster) applyBooster(!!ch.booster.newValue);
+    });
+  } catch (e) { /* 저장소가 없어도 기본 주기로 동작한다 */ }
+
+  function onTick() {
     sendUpdate(false);
     // 안전망: 일부 플레이어는 끝에서 'ended'를 안 쏘고 멈추기만 한다.
     //  끝 1초 이내 + 정지 상태일 때만 완주로 간주 (중간 일시정지는 절대 해당 없음)
@@ -545,7 +569,8 @@
       LOG('정주행: 끝 도달 감지(안전망)');
       onVideoEnded();
     }
-  }, 1000);
+  }
+  installTick();
 
   // ── 비디오 이벤트 ──
   //  ※ timeupdate는 등록하지 않음 — 초당 ~4회 발생해 매번 풀 DOM 스캔+전송을

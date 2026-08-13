@@ -10,7 +10,7 @@
 //   - ttfc:// 프로토콜 (가챠 연동)
 // ============================================================
 
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, Notification } = require('electron');
 const path = require('path');
 const { execFile } = require('child_process');
 const log = require('electron-log');
@@ -22,6 +22,8 @@ const BingeLogger = require('./binge-webhook');
 const WatchHistory = require('./watch-history');
 const AppConsole = require('./app-console');
 const i18n = require('./i18n');
+const Updater = require('./updater');
+const fastStart = require('./fast-start');
 const { setupProtocol, handleDeepLink, findDeepLink } = require('./protocol');
 
 // Discord 애플리케이션 ID (기본값 = TTFC 앱). 개인 설정으로 덮어쓸 수 있다.
@@ -55,6 +57,9 @@ const store = new Store({
             timeMode: 'progress',   // progress | remaining | none
         },
         lang: 'auto',               // auto | ko | en | ja
+        updateNotify: true,         // 새 버전 알림 받기
+        fastStart: false,           // 로그온 직후 바로 실행 (작업 스케줄러)
+        booster: false,             // 반응 속도 우선 (CPU 를 더 쓴다)
     },
 });
 
@@ -63,6 +68,7 @@ let mainWindow = null;
 let tray = null;
 let discordRPC = null;
 let extensionBridge = null;
+let updater = null;
 // 시청기록은 ttfc:// 딥링크로만 쓰인다. 앱 시작 때 만들면 안 쓰는 사람도
 // 콜드 스타트마다 동기 파일 I/O 를 치른다 — 실제로 필요할 때 만든다.
 let watchHistory = null;
@@ -103,6 +109,52 @@ function rpcSettings() {
         showThumbnail: store.get('rpc.showThumbnail'),
         showButtons: store.get('rpc.showButtons'),
     };
+}
+
+// ── 부스터 ──
+//  켜면 확장이 상태를 더 자주 살펴 반응이 빨라진다. 대신 CPU 를 더 쓴다.
+//  실제 주기 값은 확장이 정하고, 앱은 켜짐/꺼짐만 알려준다.
+function applyBooster() {
+    const on = !!store.get('booster');
+    if (extensionBridge) extensionBridge.setBooster(on);
+    log.info('[Booster]', on ? '켜짐 (반응 우선)' : '꺼짐 (기본)');
+}
+
+// ── 빠른 시작 ──
+//  Run 키로 등록하면 Windows 가 일부러 늦게 띄운다. 작업 스케줄러의 로그온
+//  트리거는 그 대기열을 타지 않아 로그온과 거의 동시에 뜬다.
+//  둘을 같이 켜면 두 번 실행되므로, 빠른 시작을 켜면 Run 키는 지운다.
+async function applyFastStart(enabled) {
+    if (process.platform !== 'win32') return false;
+    if (enabled) {
+        const ok = await fastStart.enable(process.execPath);
+        if (ok) applyAutoStart(false);      // Run 키 제거 — 중복 실행 방지
+        else applyAutoStart(isAutoStartEnabled());  // 실패하면 원래 방식으로 되돌린다
+        return ok;
+    }
+    await fastStart.disable();
+    applyAutoStart(isAutoStartEnabled());   // Run 키 복구
+    return true;
+}
+
+// ── 업데이트 알림 ──
+function notifyUpdate(info) {
+    log.info('[Update] 알림 표시:', info.tag);
+    try {
+        if (!Notification.isSupported()) return;
+        const n = new Notification({
+            title: T('update.title'),
+            body: T('update.body', { version: info.tag }),
+            icon: loadIcon(['icon.png', 'icon.ico']),
+            silent: false,
+        });
+        n.on('click', () => { try { shell.openExternal(info.url); } catch (e) {} });
+        n.show();
+    } catch (e) {
+        log.warn('[Update] 알림 실패:', e.message);
+    }
+    rebuildTrayMenu();   // 트레이에 "새 버전" 항목이 뜨게
+    pushStatus();
 }
 
 // ── 아이콘 ──
@@ -185,6 +237,14 @@ function rebuildTrayMenu() {
             click: () => toggleRPC(),
         },
         { label: T('tray.reconnect'), click: () => reconnectRPC() },
+        // 새 버전이 있을 때만 보인다
+        ...(updater && updater.latest ? [
+            { type: 'separator' },
+            {
+                label: T('tray.update', { version: updater.latest.tag }),
+                click: () => { try { shell.openExternal(updater.latest.url); } catch (e) {} },
+            },
+        ] : []),
         { type: 'separator' },
         {
             label: isAutoStartEnabled() ? T('tray.autoStartOn') : T('tray.autoStartOff'),
@@ -315,7 +375,49 @@ ipcMain.handle('rpc-get-settings', () => ({
     timeMode: store.get('rpc.timeMode'),
     version: app.getVersion(),
     lang: store.get('lang'),          // 설정값 그대로 ('auto' 포함)
+    updateNotify: store.get('updateNotify'),
+    fastStart: store.get('fastStart'),
+    booster: store.get('booster'),
+    update: updater ? updater.status() : null,
 }));
+
+// ── 새 기능 토글 ──
+ipcMain.handle('feature-set', async (e, key, value) => {
+    const v = !!value;
+    if (key === 'updateNotify') {
+        store.set('updateNotify', v);
+        if (v) { updater.start(); updater.check(); } else { updater.stop(); }
+        log.info('[Update] 알림', v ? '켜짐' : '꺼짐');
+        return { ok: true, value: v };
+    }
+    if (key === 'booster') {
+        store.set('booster', v);
+        applyBooster();
+        return { ok: true, value: v };
+    }
+    if (key === 'fastStart') {
+        const ok = await applyFastStart(v);
+        // 등록에 실패하면 설정을 켜진 것으로 남기지 않는다 — 화면과 실제가 어긋난다
+        store.set('fastStart', ok && v);
+        rebuildTrayMenu();
+        return { ok, value: ok && v };
+    }
+    return { ok: false };
+});
+
+// 사용자가 직접 누른 확인은 알림이 꺼져 있어도 한다
+ipcMain.handle('update-check', async () => {
+    if (!updater) return null;
+    await updater.check(true);
+    rebuildTrayMenu();
+    return updater.status();
+});
+
+ipcMain.handle('update-open', () => {
+    const url = updater ? updater.status().url : '';
+    if (url) { try { shell.openExternal(url); } catch (e) {} }
+    return true;
+});
 
 // ── 언어 ──
 ipcMain.handle('i18n-get', () => ({
@@ -398,8 +500,23 @@ if (!gotLock) {
         extensionBridge.onConnectionChange = () => pushStatus();
         extensionBridge.start();
 
-        // 부팅 자동 시작 등록(설정값 반영) + 이번 실행이 자동 시작이면 최소화로
-        applyAutoStart(isAutoStartEnabled());
+        // 업데이트 확인기 (알림을 꺼놨으면 시작하지 않는다 — 요청도 안 나간다)
+        updater = new Updater({
+            currentVersion: app.getVersion(),
+            isEnabled: () => !!store.get('updateNotify'),
+            onFound: (info) => notifyUpdate(info),
+        });
+        if (store.get('updateNotify')) updater.start();
+
+        applyBooster();
+
+        // 부팅 자동 시작. 빠른 시작(작업 스케줄러)을 켰으면 Run 키는 쓰지 않는다.
+        if (store.get('fastStart') && process.platform === 'win32') {
+            // 설치 경로가 바뀌었을 수 있으니 매번 현재 경로로 다시 등록한다
+            applyFastStart(true).then((ok) => { if (!ok) store.set('fastStart', false); });
+        } else {
+            applyAutoStart(isAutoStartEnabled());
+        }
         // 트레이로 시작할 땐 창을 아예 만들지 않는다.
         //  창을 숨겨만 두면 렌더러와 GPU 프로세스가 계속 떠서 170MB 를 잡고 있는다
         //  (실측: 숨김 상태 309MB → 창 없이 139MB). 트레이나 딥링크로 열면

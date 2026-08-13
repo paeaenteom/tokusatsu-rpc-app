@@ -29,6 +29,7 @@ class ExtensionBridge {
         this._started = false;
         this.onConnectionChange = null;  // 미니 창용 콜백
         this.lang = 'ko';                // 확장에 알려줄 앱 언어
+        this.booster = false;            // 반응 우선 모드 (확장이 더 자주 살핀다)
         // 로그 중복 제거는 사이트별로 해야 한다. 하나로 두면 두 사이트를 같이 볼 때
         // 키가 번갈아 바뀌어 모든 메시지가 로그를 남긴다(초당 2줄).
         this._videoLogKeys = new Map();
@@ -39,6 +40,12 @@ class ExtensionBridge {
     setLang(lang) {
         this.lang = lang;
         this._broadcast({ type: 'LANG', lang });
+    }
+
+    // 부스터 켜짐/꺼짐만 알린다. 실제 주기 값은 확장이 정한다.
+    setBooster(on) {
+        this.booster = !!on;
+        this._broadcast({ type: 'BOOSTER', on: this.booster });
     }
 
     _broadcast(obj) {
@@ -74,7 +81,7 @@ class ExtensionBridge {
                 log.info(`[Bridge] 크롬 확장 연결됨 (${this.wss.clients.size}개)`);
                 this._notifyConnection();
 
-                ws.send(JSON.stringify({ type: 'CONNECTED', lang: this.lang }));
+                ws.send(JSON.stringify({ type: 'CONNECTED', lang: this.lang, booster: this.booster }));
 
                 ws.on('message', (data) => {
                     try {

@@ -190,6 +190,7 @@ async function loadSettings() {
   $('showButtons').checked = cfg.showButtons !== false;
   $('timeMode').value = cfg.timeMode || 'progress';
   $('ver').textContent = 'v' + (cfg.version || '4.2.1');
+  return cfg;
 }
 
 function bindSettings() {
@@ -200,6 +201,42 @@ function bindSettings() {
   });
   $('timeMode').addEventListener('change', () => {
     window.rpcAPI.setSetting('timeMode', $('timeMode').value);
+  });
+}
+
+// ── 앱 설정 토글 (업데이트 알림 / 빠른 시작 / 부스터) ──
+function renderUpdate(u) {
+  const el = $('updateState'), btn = $('updateBtn');
+  if (u && u.latest) {
+    el.textContent = t('win.updateFound', { version: u.latest });
+    el.classList.add('found');
+    btn.textContent = t('win.updateGet');
+    btn.onclick = () => window.rpcAPI.openUpdate();
+  } else {
+    el.textContent = u && u.checkedAt ? t('win.updateLatest') : '';
+    el.classList.remove('found');
+    btn.textContent = t('win.updateCheck');
+    btn.onclick = async () => { btn.disabled = true; renderUpdate(await window.rpcAPI.checkUpdate()); btn.disabled = false; };
+  }
+}
+
+async function loadFeatures(cfg) {
+  $('updateNotify').checked = cfg.updateNotify !== false;
+  $('fastStart').checked = !!cfg.fastStart;
+  $('booster').checked = !!cfg.booster;
+  renderUpdate(cfg.update);
+}
+
+function bindFeatures() {
+  ['updateNotify', 'fastStart', 'booster'].forEach((id) => {
+    $(id).addEventListener('change', async () => {
+      const box = $(id);
+      box.disabled = true;
+      const r = await window.rpcAPI.setFeature(id, box.checked);
+      // 등록에 실패하면(빠른 시작 등) 화면을 실제 상태로 되돌린다 — 거짓말하지 않는다
+      if (r && typeof r.value === 'boolean') box.checked = r.value;
+      box.disabled = false;
+    });
   });
 }
 
@@ -241,8 +278,10 @@ window.rpcAPI.onStatus((s) => applyStatus(s));
 (async () => {
   await loadLanguage();     // 문자열부터 채우고 나머지를 그린다
   bindLanguage();
-  await loadSettings();
+  const cfg = await loadSettings();
   bindSettings();
+  await loadFeatures(cfg);
+  bindFeatures();
   await loadConsole();
   const s = await window.rpcAPI.getStatus();
   applyStatus(s);

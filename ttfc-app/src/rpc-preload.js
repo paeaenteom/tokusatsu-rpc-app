@@ -17,6 +17,11 @@ contextBridge.exposeInMainWorld('rpcAPI', {
   setLang: (setting) => ipcRenderer.invoke('i18n-set', setting),
   onLangChange: (cb) => ipcRenderer.on('lang-changed', (e, p) => cb(p)),
 
+  // 앱 설정 토글 / 업데이트
+  setFeature: (key, value) => ipcRenderer.invoke('feature-set', key, value),
+  checkUpdate: () => ipcRenderer.invoke('update-check'),
+  openUpdate: () => ipcRenderer.invoke('update-open'),
+
   // 콘솔 (에러 확인용)
   getConsole: () => ipcRenderer.invoke('console-get'),
   clearConsole: () => ipcRenderer.invoke('console-clear'),

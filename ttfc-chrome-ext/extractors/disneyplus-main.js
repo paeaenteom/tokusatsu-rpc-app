@@ -100,12 +100,23 @@
     try { window.postMessage({ channel: CHANNEL, payload: snap }, location.origin); } catch (e) {}
   }
 
-  setInterval(tick, POLL_MS);
+  // 부스터: 격리 월드가 알려주면 주기를 바꾼다 (MAIN 월드는 chrome.storage 를 못 본다)
+  const POLL_BOOST = 150;
+  let pollTimer = setInterval(tick, POLL_MS);
+  let curPoll = POLL_MS;
+  function setPoll(ms) {
+    if (ms === curPoll) return;
+    curPoll = ms;
+    clearInterval(pollTimer);
+    pollTimer = setInterval(tick, ms);
+  }
   tick();
 
   // 격리 월드가 늦게 붙어도 첫 값을 받을 수 있게, 요청이 오면 즉시 한 번 더 보낸다
   window.addEventListener('message', (e) => {
-    if (e.source !== window || !e.data || e.data.channel !== CHANNEL + '_REQ') return;
+    if (e.source !== window || !e.data) return;
+    if (e.data.channel === CHANNEL + '_BOOST') { setPoll(e.data.on ? POLL_BOOST : POLL_MS); return; }
+    if (e.data.channel !== CHANNEL + '_REQ') return;
     lastJson = '';
     tick();
   });

@@ -118,6 +118,10 @@
     cursor: pointer; transition: .2s;
   }
   .btn:hover { background: var(--border); }
+  .btn.slim { flex: 0 0 auto; padding: 4px 10px; font-size: 11px; }
+  .toggle-row .name .hint { display: block; font-size: 10px; color: var(--text-dim); margin-top: 1px; }
+  .select-row .name#updateState { font-size: 11px; color: var(--text-dim); }
+  .select-row .name#updateState.found { color: var(--accent); font-weight: 600; }
 
   /* 콘솔 */
   .console-head { display: flex; align-items: center; }
@@ -209,6 +213,29 @@
         <option value="en">English</option>
         <option value="ja">日本語</option>
       </select>
+    </div>
+  </div>
+
+  <div class="section-title" data-i18n="win.section2"></div>
+  <div class="settings">
+    <div class="toggle-row">
+      <span class="name" data-i18n="win.updateNotify"></span>
+      <label class="switch"><input type="checkbox" id="updateNotify"><span class="slider"></span></label>
+    </div>
+    <div class="toggle-row">
+      <span class="name" data-i18n="win.fastStart"></span>
+      <label class="switch"><input type="checkbox" id="fastStart"><span class="slider"></span></label>
+    </div>
+    <div class="toggle-row">
+      <span class="name">
+        <span data-i18n="win.booster"></span>
+        <span class="hint" data-i18n="win.boosterHint"></span>
+      </span>
+      <label class="switch"><input type="checkbox" id="booster"><span class="slider"></span></label>
+    </div>
+    <div class="select-row">
+      <span class="name" id="updateState"></span>
+      <button class="btn slim" id="updateBtn"></button>
     </div>
   </div>
 

@@ -39,6 +39,18 @@ module.exports = {
     'win.timeLeft': '{t} left',
     'win.timeElapsed': '{t} elapsed',
 
+    'win.section2': 'App settings',
+    'win.updateNotify': 'Update notifications',
+    'win.fastStart': 'Start right at logon',
+    'win.booster': 'Prioritize responsiveness',
+    'win.boosterHint': 'Uses a bit more CPU',
+    'win.updateFound': 'New version {version}',
+    'win.updateGet': 'Get it',
+    'win.updateLatest': 'Up to date',
+    'win.updateCheck': 'Check for updates',
+    'update.title': 'TOKU RPC update',
+    'update.body': '{version} is out. Click to go get it',
+    'tray.update': '⬆ New version {version}',
     // ── Text shown on the Discord profile ──
     'rpc.viewOnSite': 'View on site',
     'rpc.watching': 'Watching {site}',

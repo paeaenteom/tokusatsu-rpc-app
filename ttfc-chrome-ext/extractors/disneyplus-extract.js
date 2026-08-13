@@ -129,6 +129,17 @@
   // 늦게 붙었을 때를 대비해 한 번 요청해 둔다
   try { window.postMessage({ channel: CHANNEL + '_REQ' }, location.origin); } catch (e) {}
 
+  // 부스터를 MAIN 월드에 전달한다 (거긴 chrome.storage 를 못 본다)
+  function pushBooster(on) {
+    try { window.postMessage({ channel: CHANNEL + '_BOOST', on: !!on }, location.origin); } catch (e) {}
+  }
+  try {
+    chrome.storage.local.get('booster', (r) => pushBooster(r && r.booster));
+    chrome.storage.onChanged.addListener((ch, area) => {
+      if (area === 'local' && ch.booster) pushBooster(ch.booster.newValue);
+    });
+  } catch (e) { /* 저장소 없이도 기본 주기로 동작한다 */ }
+
   const fresh = () => (snap && Date.now() - snap.at < 5000) ? snap : null;
 
   // ── URL 판정 ──
