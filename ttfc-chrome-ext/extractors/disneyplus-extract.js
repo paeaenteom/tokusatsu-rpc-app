@@ -83,11 +83,18 @@
 
   // ── 페이지 월드에서 오는 재생 상태 ──
   let snap = null;
+  let lastKey = '';
   window.addEventListener('message', (e) => {
     if (e.source !== window) return;
     const d = e.data;
     if (!d || d.channel !== CHANNEL) return;
     snap = d.payload || null;
+    // 작품·화·재생상태가 바뀌었으면 다음 주기를 기다리지 않고 바로 올린다
+    const key = snap ? [snap.title, snap.subtitle, snap.isPlaying, snap.ended].join('|') : '';
+    if (key !== lastKey) {
+      lastKey = key;
+      if (self.TOKU_NUDGE) self.TOKU_NUDGE('디즈니+ 플레이어 상태 변화');
+    }
   });
   // 늦게 붙었을 때를 대비해 한 번 요청해 둔다
   try { window.postMessage({ channel: CHANNEL + '_REQ' }, location.origin); } catch (e) {}
@@ -180,6 +187,8 @@
         return { seriesName: t && t !== 'Disney+' ? t : SITE_NAME, episodeTitle: '', episodeNumber: '', thumbnail: '' };
       }
       const ep = splitEpisode(s.subtitle);
+      // 재생 화면에도 다음화 트레이 등에 /play/ 링크가 뜬다 — 지나갈 때마다 주워 둔다
+      harvestEpisodeThumbs();
       // 그 화의 스틸을 기억해 뒀으면 그걸 쓰고, 없으면 시리즈 아트워크로 떨어진다
       const epThumb = epThumbs.get(playIdOf(location.pathname)) || '';
       return {

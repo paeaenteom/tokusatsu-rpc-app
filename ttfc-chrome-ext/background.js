@@ -28,44 +28,69 @@ const LOG = (...a) => console.log('[TOKU RPC/bg]', ...a);
 //  Discord 프레즌스가 두 작품 사이에서 깜빡이고 정주행 웹훅이 폭주했다.
 //  → 한 번에 한 탭만 "주인"으로 삼아 그 탭의 상태만 앱으로 보낸다.
 //    재생 중인 탭이 우선, 주인이 계속 재생 중이면 그대로 유지(깜빡임 방지).
-const tabStates = new Map();   // tabId → { data, at, playing }
-let ownerTab = null;
+// ── 탭 중재 (사이트별) ──
+//  예전엔 전체에서 탭 하나만 주인으로 뽑아 나머지를 버렸다. 사이트가 둘 이상
+//  열려 있으면 어느 쪽을 보여줄지 정할 방법이 마땅치 않아 계속 깜빡였다.
+//  지금은 사이트마다 Discord 애플리케이션이 따로 있으므로, 사이트별로 하나씩
+//  주인을 뽑아 각자 올린다 — 켜 둔 사이트가 전부 프로필에 뜬다(유빈 요청).
+//  같은 사이트를 여러 탭에서 열었을 때의 깜빡임은 그대로 막는다.
+const tabStates = new Map();      // tabId → { data, at, playing, site }
+const ownerBySite = new Map();    // site → tabId
 const TAB_STALE_MS = 6000;
 
-function chooseOwner() {
+function siteOfTab(id) {
+  const s = tabStates.get(id);
+  return (s && s.site) || '';
+}
+
+function dropStale() {
   const now = Date.now();
   for (const [id, s] of tabStates) if (now - s.at > TAB_STALE_MS) tabStates.delete(id);
-  // 주인 자리는 최대한 유지한다(깜빡임 방지).
-  //  넘기는 경우는 둘뿐: ① 주인이 응답 없음(위에서 정리됨)
-  //                     ② 주인은 재생 중이 아니고, 다른 탭이 재생 중일 때
-  //  ⚠ "재생 중일 때만 유지"로 두면 두 탭이 모두 일시정지일 때 주인이
-  //    매 갱신마다 뒤바뀌어 상태가 계속 깜빡인다(실측 설계 결함).
-  if (ownerTab != null && tabStates.has(ownerTab)) {
-    const cur = tabStates.get(ownerTab);
-    if (cur.playing) return ownerTab;
+  for (const [site, id] of ownerBySite) if (!tabStates.has(id)) ownerBySite.delete(site);
+}
+
+// 해당 사이트 안에서만 주인을 정한다. 규칙은 예전과 같다:
+//  주인 자리는 최대한 유지하고, 주인이 재생 중이 아닌데 같은 사이트의 다른 탭이
+//  재생 중일 때만 넘긴다. (둘 다 일시정지면 유지 — 안 그러면 매 갱신마다 뒤바뀐다)
+function chooseOwner(site) {
+  dropStale();
+  const cur = ownerBySite.get(site);
+  if (cur != null && tabStates.has(cur) && siteOfTab(cur) === site) {
+    if (tabStates.get(cur).playing) return cur;
     let othersPlaying = false;
-    for (const [id, s] of tabStates) if (id !== ownerTab && s.playing) { othersPlaying = true; break; }
-    if (!othersPlaying) return ownerTab;   // 아무도 재생 안 함 → 주인 유지
+    for (const [id, s] of tabStates)
+      if (id !== cur && s.site === site && s.playing) { othersPlaying = true; break; }
+    if (!othersPlaying) return cur;
   }
   let bestId = null, best = null;
   for (const [id, s] of tabStates) {
+    if (s.site !== site) continue;
     if (!best || (s.playing && !best.playing) ||
         (s.playing === best.playing && s.at > best.at)) { bestId = id; best = s; }
   }
-  if (bestId !== ownerTab) {
-    ownerTab = bestId;
-    if (bestId != null) LOG('상태 주인 탭 변경 →', bestId, tabStates.get(bestId).data.site || '');
+  if (bestId == null) { ownerBySite.delete(site); return null; }
+  if (bestId !== cur) {
+    ownerBySite.set(site, bestId);
+    LOG('주인 탭 변경 [' + site + '] →', bestId);
   }
-  return ownerTab;
+  return bestId;
 }
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  if (tabStates.delete(tabId) && ownerTab === tabId) { ownerTab = null; chooseOwner(); }
+  const site = siteOfTab(tabId);
+  if (!tabStates.delete(tabId)) return;
+  if (ownerBySite.get(site) === tabId) {
+    ownerBySite.delete(site);
+    // 같은 사이트의 다른 탭이 남아 있으면 그쪽이 이어받고, 없으면 그 사이트만 지운다
+    if (chooseOwner(site) == null && connected) rawSend({ type: 'CLEAR', site });
+  }
 });
 
 let ws = null;
-let lastData = null;      // 마지막 활동 데이터 — 재연결 직후 재전송
-let pendingData = null;   // 연결 대기 중 보낼 데이터 (최신 1건)
+// 사이트마다 따로 기억한다 — 재연결하면 켜져 있던 사이트를 전부 되살려야
+// 하나만 남고 나머지가 사라지지 않는다
+const lastBySite = new Map();   // site → 마지막 활동 데이터
+let pendingData = null;         // 연결 대기 중 보낼 데이터 (최신 1건)
 let reconnectTimer = null;
 
 function ensureConnected() {
@@ -77,9 +102,11 @@ function ensureConnected() {
 
     ws.onopen = () => {
       LOG('WebSocket 연결됨 ✓');
-      const data = pendingData || lastData;
+      const pend = pendingData;
       pendingData = null;
-      if (data) { rawSend(data); LOG('연결 직후 상태 재전송:', data.type); }
+      // 살아있는 사이트를 전부 다시 올린다 (하나만 복구되면 나머지가 사라진다)
+      for (const [site, data] of lastBySite) { rawSend(data); LOG('재전송 [' + site + ']', data.type); }
+      if (pend && !lastBySite.has(pend.site || '')) rawSend(pend);
     };
 
     ws.onclose = (e) => {
@@ -150,35 +177,39 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.action === 'UPDATE_STATE') {
     const tabId = sender.tab ? sender.tab.id : -1;
+    const site = msg.data.site || '';
     tabStates.set(tabId, {
       data: { ...msg.data },
       at: Date.now(),
       playing: !!msg.data.isPlaying,
+      site,
     });
-    const owner = chooseOwner();
+    const owner = chooseOwner(site);
     if (owner !== tabId) {
-      // 다른 탭이 주인 → 이 탭 상태는 보내지 않음 (깜빡임·웹훅 폭주 방지)
+      // 같은 사이트의 다른 탭이 주인 → 이 탭 상태는 보내지 않음 (깜빡임·웹훅 폭주 방지)
+      // 다른 사이트는 서로 막지 않는다 — 각자 자기 Discord 앱에 올라간다
       sendResponse({ ok: true, connected, muted: true });
       return true;
     }
-    lastData = { ...msg.data };
-    const sent = sendOrQueue(lastData);
+    lastBySite.set(site, { ...msg.data });
+    const sent = sendOrQueue({ ...msg.data });
     sendResponse({ ok: sent, connected });
   } else if (msg.action === 'CLEAR') {
     // 숨겨진 탭이 보내는 CLEAR가 "재생 중인 다른 탭"의 프레즌스를 지우면 안 된다
     const tabId = sender.tab ? sender.tab.id : -1;
+    const site = siteOfTab(tabId) || (msg.site || '');
     tabStates.delete(tabId);
-    if (ownerTab === tabId) ownerTab = null;
-    const nextOwner = chooseOwner();
+    if (ownerBySite.get(site) === tabId) ownerBySite.delete(site);
+    const nextOwner = chooseOwner(site);
     if (nextOwner != null && nextOwner !== tabId) {
-      LOG('CLEAR 무시 — 다른 탭이 재생 중', nextOwner);
+      LOG('CLEAR 무시 — 같은 사이트의 다른 탭이 살아있음', nextOwner);
       sendResponse({ ok: true, connected, muted: true });
       return true;
     }
-    LOG('CLEAR 요청');
-    lastData = null;
+    LOG('CLEAR 요청 [' + site + ']');
+    lastBySite.delete(site);
     pendingData = null;
-    if (connected) rawSend({ type: 'CLEAR' });
+    if (connected) rawSend({ type: 'CLEAR', site });   // 그 사이트만 지운다
     sendResponse({ ok: true, connected });
   } else if (msg.action === 'GET_STATUS') {
     sendResponse({ connected, wsUrl: WS_URL });

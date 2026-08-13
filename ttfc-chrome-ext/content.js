@@ -521,6 +521,18 @@
       .catch((e) => LOG('전송 실패 (서비스 워커 응답 없음):', e.message));
   }
 
+  // 추출기가 "지금 바로 보내라"고 부를 수 있는 통로.
+  //  주기 전송만으로는 최악 1초가 그냥 깔린다. 사이트가 상태 변화를 먼저 아는
+  //  경우(디즈니+ 플레이어 상태 객체 등)엔 기다릴 이유가 없다.
+  let nudgeAt = 0;
+  self.TOKU_NUDGE = (why) => {
+    const now = Date.now();
+    if (now - nudgeAt < 250) return;   // 연달아 불려도 과하게 쏘지 않는다
+    nudgeAt = now;
+    LOG('즉시 갱신 —', why || '');
+    sendUpdate(true);
+  };
+
   // 1초 주기 — timeupdate 제거·썸네일 캐시 덕에 스캔이 가벼워져 1초로 단축 (반응속도 ↑)
   setInterval(() => {
     sendUpdate(false);

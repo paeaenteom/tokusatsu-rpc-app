@@ -158,8 +158,11 @@ class ExtensionBridge {
         }
 
         if (msg.type === 'CLEAR') {
-            log.info('[Bridge] CLEAR 수신');
-            this.discordRPC.clearActivity();
+            // 사이트를 지정해 오면 그 사이트만 지운다.
+            //  여러 사이트를 동시에 띄우므로, 한 사이트를 닫았다고 나머지까지
+            //  내려가면 안 된다. (옛 확장은 site 없이 보내므로 그때는 전부 지운다)
+            log.info('[Bridge] CLEAR 수신', msg.site ? '[' + msg.site + ']' : '(전체)');
+            this.discordRPC.clearActivity(msg.site || undefined);
             return;
         }
 

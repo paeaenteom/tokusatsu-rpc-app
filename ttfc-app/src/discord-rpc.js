@@ -738,4 +738,90 @@ class DiscordRichPresence {
     }
 }
 
-module.exports = DiscordRichPresence;
+// ══════════════════════════════════════════════════════════
+//  여러 사이트를 동시에 표시하기 위한 허브
+//
+//  예전에는 클라이언트 하나를 돌려쓰며 사이트가 바뀔 때마다 Discord
+//  애플리케이션을 갈아끼웠다. 그래서 아무리 여러 사이트를 켜 둬도 한 번에
+//  하나만 떴고, 어느 쪽을 보여줄지 정하느라 계속 깜빡였다.
+//
+//  사이트마다 애플리케이션이 따로 있으니 클라이언트도 따로 두면 된다.
+//  Discord 는 서로 다른 애플리케이션의 활동을 동시에 받는다(실측 확인).
+//  → 켜 둔 사이트가 전부 프로필에 뜬다.
+//
+//  바깥에서 보는 메서드 이름은 예전 그대로라 부르는 쪽은 고칠 게 거의 없다.
+// ══════════════════════════════════════════════════════════
+class DiscordRpcHub {
+    constructor(defaultClientId) {
+        this.defaultClientId = defaultClientId;
+        this.clients = new Map();     // siteId → DiscordRichPresence
+        this.lang = 'ko';
+        this.onStatusChange = null;
+        this._enabled = true;
+    }
+
+    // 그 사이트 전용 클라이언트를 (없으면 만들어) 돌려준다
+    _for(siteId) {
+        const id = SITES[siteId] ? siteId : 'ttfc';
+        let c = this.clients.get(id);
+        if (!c) {
+            c = new DiscordRichPresence(appIdOf(id));
+            c.setLang(this.lang);
+            c.onStatusChange = () => { if (this.onStatusChange) this.onStatusChange(); };
+            this.clients.set(id, c);
+            log.info(`[RPC] 사이트 클라이언트 생성: ${id} (${appIdOf(id)})`);
+            if (this._enabled) c.connect();
+        }
+        return c;
+    }
+
+    updateFromVideoState(s) { this._for(s && s.site).updateFromVideoState(s); }
+    updateFromNavigation(s) { this._for(s && s.site).updateFromNavigation(s); }
+
+    // 사이트를 주면 그 사이트만, 안 주면 전부 지운다
+    clearActivity(siteId) {
+        if (siteId && this.clients.has(siteId)) { this.clients.get(siteId).clearActivity(); return; }
+        if (siteId) return;                       // 아직 만든 적 없는 사이트 → 지울 것도 없다
+        for (const c of this.clients.values()) c.clearActivity();
+    }
+
+    connect() { this._enabled = true; for (const c of this.clients.values()) c.connect(); }
+    disconnect() { this._enabled = false; for (const c of this.clients.values()) c.disconnect(); }
+
+    setLang(lang) { this.lang = lang; for (const c of this.clients.values()) c.setLang(lang); }
+
+    // 썸네일 바이트는 어느 사이트 것인지 알 수 없으니 전부에게 준다.
+    // 실제로 쓰는 쪽만 캐시에 남고 나머지는 그냥 버린다.
+    cacheThumbnail(url, dataUrl) { for (const c of this.clients.values()) c.cacheThumbnail(url, dataUrl); }
+    rememberThumbBytes(url, dataUrl) {
+        for (const c of this.clients.values()) if (c.rememberThumbBytes) c.rememberThumbBytes(url, dataUrl);
+    }
+    getThumbBytes(url) {
+        for (const c of this.clients.values()) { const b = c.getThumbBytes && c.getThumbBytes(url); if (b) return b; }
+        return null;
+    }
+    _resolveImage(url, logo) {
+        // 캐시를 가진 클라이언트가 있으면 그 결과를 쓴다 (재호스팅 URL 확보용)
+        for (const c of this.clients.values()) {
+            const r = c._resolveImage(url, '');
+            if (r) return r;
+        }
+        return logo;
+    }
+
+    // 미니 창에는 대표 하나만 보여준다 — 재생 중인 쪽을 우선한다
+    getStatus() {
+        let connected = false, user = '', activity = null, watching = false;
+        for (const c of this.clients.values()) {
+            const s = c.getStatus();
+            if (s.connected) connected = true;
+            if (!user && s.user) user = s.user;
+            const isWatching = !!(c.currentState && c.currentState.isWatching);
+            if (s.activity && (!activity || (isWatching && !watching))) { activity = s.activity; watching = isWatching; }
+        }
+        return { connected, user, activity };
+    }
+}
+
+module.exports = DiscordRpcHub;
+module.exports.DiscordRichPresence = DiscordRichPresence;
