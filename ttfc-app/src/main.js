@@ -43,6 +43,12 @@ log.info('=== TOKU RPC 시작 ===');
 // ⚠ app.whenReady() 전에 불러야 효과가 있다.
 app.disableHardwareAcceleration();
 
+// Windows 는 이 값으로 "창 ↔ 앱" 을 연결한다. 없으면 작업표시줄 버튼이 우리 앱으로
+// 인식되지 않아 아이콘이 Electron 기본값으로 뜬다(실제로 그랬다).
+// 보통은 설치 프로그램(NSIS)이 넣어 주는데, 이 프로젝트는 win-unpacked 를 그대로
+// 배포하므로 여기서 직접 지정한다. ⚠ 창을 만들기 전에 불러야 한다.
+if (process.platform === 'win32') app.setAppUserModelId('com.paeaenteom.toku-rpc');
+
 // ── Store ──
 const store = new Store({
     defaults: {
