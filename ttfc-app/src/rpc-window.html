@@ -26,6 +26,12 @@
     user-select: none;
     -webkit-user-select: none;
   }
+
+  /* 스크롤바를 감춘다 (유빈 요청 — 깔끔하게).
+     휠과 드래그 스크롤은 그대로 동작하고, 보이지만 않는다.
+     콘솔 박스도 같이 적용된다 — 자동으로 맨 아래를 따라가므로 손해가 없다. */
+  ::-webkit-scrollbar { width: 0; height: 0; }
+  * { scrollbar-width: none; }
   .header {
     display: flex; align-items: center; gap: 8px;
     margin-bottom: 14px;
