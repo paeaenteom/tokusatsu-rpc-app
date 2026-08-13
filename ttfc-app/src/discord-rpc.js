@@ -785,7 +785,17 @@ class DiscordRpcHub {
         for (const c of this.clients.values()) c.clearActivity();
     }
 
-    connect() { this._enabled = true; for (const c of this.clients.values()) c.connect(); }
+    // 사이트 상태가 오기 전에도 Discord 에는 붙어 있어야 한다.
+    //  클라이언트를 사이트별로 만들게 바꾸면서, 지원 사이트를 열기 전까지는
+    //  클라이언트가 하나도 없어 이 순회가 빈 채로 끝났다. 그래서 미니 창이
+    //  "Discord 연결 안 됨" 으로 보였다 — 실제로는 연결을 시도조차 안 한 것이다.
+    //  기본 클라이언트를 하나 띄워 예전 동작(켜면 바로 연결)을 되돌린다.
+    //  활동은 올리지 않으므로 프로필에는 아무것도 안 뜬다.
+    connect() {
+        this._enabled = true;
+        if (this.clients.size === 0) this._for('ttfc');   // 만들면서 connect 까지 한다
+        for (const c of this.clients.values()) c.connect();
+    }
     disconnect() { this._enabled = false; for (const c of this.clients.values()) c.disconnect(); }
 
     setLang(lang) { this.lang = lang; for (const c of this.clients.values()) c.setLang(lang); }
