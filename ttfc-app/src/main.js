@@ -97,16 +97,29 @@ function rpcSettings() {
     };
 }
 
+// ── 아이콘 ──
+//  후보를 앞에서부터 시도해 비어 있지 않은 첫 이미지를 쓴다.
+//  아이콘이 통째로 비면 Windows 가 기본 아이콘을 그려서 "아이콘이 없다"로 보인다.
+//  어느 파일도 못 읽으면 로그에 남긴다 — 조용히 넘어가면 원인을 못 찾는다.
+function loadIcon(names) {
+    for (const name of names) {
+        const p = path.join(__dirname, '..', 'assets', name);
+        try {
+            const img = nativeImage.createFromPath(p);
+            if (img && !img.isEmpty()) return img;
+            log.warn('[Icon] 비어 있음:', name);
+        } catch (e) {
+            log.warn('[Icon] 읽기 실패:', name, e.message);
+        }
+    }
+    log.error('[Icon] 아이콘을 하나도 못 읽었다 — 기본 아이콘으로 표시된다:', names.join(', '));
+    return nativeImage.createEmpty();
+}
+
 // ── 미니 창 ──
 //  startHidden=true 면 창을 만들되 표시하지 않음 (부팅 자동 시작 시 트레이만)
 function createWindow(startHidden = false) {
-    let icon;
-    try {
-        icon = nativeImage.createFromPath(path.join(__dirname, '..', 'assets', 'icon.ico'));
-        if (icon.isEmpty()) throw new Error('empty');
-    } catch (e) {
-        icon = nativeImage.createFromPath(path.join(__dirname, '..', 'assets', 'icon.png'));
-    }
+    const icon = loadIcon(['icon.ico', 'icon.png']);
 
     mainWindow = new BrowserWindow({
         width: 400,
@@ -141,13 +154,10 @@ function createWindow(startHidden = false) {
 
 // ── 트레이 ──
 function createTray() {
-    let icon;
-    try {
-        icon = nativeImage.createFromPath(path.join(__dirname, '..', 'assets', 'icon.ico'));
-        if (icon.isEmpty()) throw new Error('empty');
-    } catch (e) {
-        icon = nativeImage.createFromPath(path.join(__dirname, '..', 'assets', 'icon.png'));
-    }
+    // 트레이는 16~32px로 그려진다. 256px짜리 icon.ico 를 주면 Windows 가 줄이면서
+    // 오르카·사슬 디테일이 뭉개져 알아볼 수 없게 된다.
+    // 그래서 그 크기에 맞춰 만들어 둔 tray-icon.png 를 먼저 쓴다.
+    const icon = loadIcon(['tray-icon.png', 'icon.ico', 'icon.png']);
     tray = new Tray(icon);
     tray.setToolTip('TOKU RPC');
     rebuildTrayMenu();
