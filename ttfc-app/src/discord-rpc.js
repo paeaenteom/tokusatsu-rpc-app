@@ -808,6 +808,15 @@ class DiscordRpcHub {
         }
         return logo;
     }
+    _cachedThumb(url) {
+        for (const c of this.clients.values()) { const r = c._cachedThumb(url); if (r) return r; }
+        return '';
+    }
+    // 어느 클라이언트든 올리는 중이면 "진행 중"으로 본다 (중복 요청 방지)
+    get _thumbPending() {
+        const clients = this.clients;
+        return { has: (url) => { for (const c of clients.values()) if (c._thumbPending.has(url)) return true; return false; } };
+    }
 
     // 미니 창에는 대표 하나만 보여준다 — 재생 중인 쪽을 우선한다
     getStatus() {
@@ -825,3 +834,4 @@ class DiscordRpcHub {
 
 module.exports = DiscordRpcHub;
 module.exports.DiscordRichPresence = DiscordRichPresence;
+module.exports.canDiscordLoad = canDiscordLoad;

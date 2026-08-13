@@ -16,6 +16,7 @@
 
 const { WebSocketServer } = require('ws');
 const log = require('electron-log');
+const { canDiscordLoad } = require('./discord-rpc');
 
 const PORT = 7690;
 
@@ -124,7 +125,10 @@ class ExtensionBridge {
     //  push 단독 구조는 앱 재시작·업로드 실패 시 영영 복구되지 않았다.
     _requestThumbIfNeeded(url, ws) {
         if (!url || !/^https?:/.test(url)) return;
-        if (/\.cloudfront\.net\//i.test(url)) return;   // 디스코드가 직접 로드 가능
+        // 디스코드가 직접 불러올 수 있는 호스트는 바이트를 받을 이유가 없다.
+        //  ⚠ 예전엔 여기 cloudfront 만 하드코딩돼 있어서, 디즈니+ 아트워크가
+        //    매초 NEED_THUMB 요청을 타고 로그를 도배했다. 판정을 한곳으로 모았다.
+        if (canDiscordLoad(url)) return;
         const rpc = this.discordRPC;
         if (!rpc || rpc._cachedThumb(url) || rpc._thumbPending.has(url)) return;
         const now = Date.now();
