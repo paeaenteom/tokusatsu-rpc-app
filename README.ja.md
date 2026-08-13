@@ -7,8 +7,9 @@
 対応サイト
 - 東映特撮ファンクラブ (TTFC) — `pc.tokusatsu-fc.jp`
 - TSUBURAYA IMAGINATION — `imagination.m-78.jp`
+- Disney+ — `www.disneyplus.com` *(実験)*
 
-> **beta 0.1** — 個人用に作ったツールです。バグがあるかもしれません。
+> **beta 0.2.2** — 個人用に作ったツールです。バグがあるかもしれません。
 
 ---
 
@@ -161,6 +162,10 @@ powershell -File tools\build-release.ps1
 - IMAGINATION のサムネイルは、サイト側が外部からのアクセスを制限しているため Discord が直接読み込めません。
   そのため、いったん画像アップローダーに上げてから表示しています (litterbox → uguu の順に試します)
 - このツールは視聴情報を表示するだけで、動画をダウンロードしたり著作権保護を回避したりはしません
+
+## 変更履歴
+
+バージョンごとの変更点は [CHANGELOG.ja.md](CHANGELOG.ja.md) にあります。
 
 ## ライセンス
 

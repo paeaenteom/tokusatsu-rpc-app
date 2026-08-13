@@ -1,8 +1,8 @@
-Disney+ support and multi-language are in, and idle memory is way down.
+Update notifications, start-at-logon and a booster are in, and the 0.2 connection bug is fixed.
 
 ## Install
 
-Just grab **`TOKU-RPC-Setup-0.2.0-beta.exe`** below and run it — that one file is all you need.
+Just grab **`TOKU-RPC-Setup-0.2.2-beta.exe`** below and run it — that one file is all you need.
 The app and the browser extension are installed in one go. There's nothing else to download.
 
 - In the installer window, just **check off the browsers you want the extension in**
@@ -11,6 +11,24 @@ The app and the browser extension are installed in one go. There's nothing else 
   (That's because Windows only lets admins write to the extension policy key. The app itself installs to your own user folder)
 - After installing, **quit your browser completely and start it again**
   (Make sure it's not still running in the system tray, or the extension won't take effect)
+
+## What's new in 0.2.2
+
+### New — all toggled in the app window under "App settings"
+- **Update notifications** — checks GitHub releases every 6 hours and tells you about new versions
+  - Turn it off and it doesn't check at all (no network request either)
+  - It doesn't download or install. It tells you, and opens the release page when you click
+- **Start right at logon** — skips the queue Windows uses to stagger startup apps
+  - Uses Task Scheduler. No admin needed
+- **Booster** — checks state more often so reactions are faster. Uses a bit more CPU
+
+### Fixed
+- **Wasn't connecting to Discord** — in 0.2 it didn't even try until you opened a
+  supported site, so the window showed "Not connected"
+- The taskbar icon showed Electron's default icon
+- Hid the scrollbar in the app window
+
+Per-version history is in the [CHANGELOG](https://github.com/paeaenteom/tokusatsu-rpc-app/blob/main/CHANGELOG.en.md).
 
 ## What's new in 0.2
 
@@ -55,7 +73,7 @@ The app and the browser extension are installed in one go. There's nothing else 
 
 | File | What it is |
 |---|---|
-| `TOKU-RPC-Setup-0.2.0-beta.exe` | **This is the only one you need** (app bundled inside) |
+| `TOKU-RPC-Setup-0.2.2-beta.exe` | **This is the only one you need** (app bundled inside) |
 | `toku-rpc-extension.crx`, `update.xml` | For automatic extension installation and updates — the browser fetches these on its own |
 | `toku-rpc-extension.zip` | For installing the extension manually (only if the automatic install is blocked) |
 

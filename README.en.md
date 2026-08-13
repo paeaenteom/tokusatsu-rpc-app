@@ -7,8 +7,9 @@ A tool that **puts what you're watching on tokusatsu streaming sites into your D
 Supported sites
 - Toei Tokusatsu Fan Club (TTFC) — `pc.tokusatsu-fc.jp`
 - TSUBURAYA IMAGINATION — `imagination.m-78.jp`
+- Disney+ — `www.disneyplus.com` *(experimental)*
 
-> **beta 0.1** — This is something I made for myself. There may be bugs.
+> **beta 0.2.2** — This is something I made for myself. There may be bugs.
 
 ---
 
@@ -162,6 +163,10 @@ Just attach those files to a release as-is.
 - IMAGINATION blocks outside access to its thumbnails, so Discord can't load them directly.
   The app uploads them to a temporary host and shows them from there (litterbox first, then uguu)
 - This tool only displays watch info — it doesn't download video or circumvent any copy protection
+
+## Changelog
+
+What changed in each version is in [CHANGELOG.en.md](CHANGELOG.en.md).
 
 ## License
 

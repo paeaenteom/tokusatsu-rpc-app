@@ -7,8 +7,9 @@
 지원 사이트
 - 東映特撮ファンクラブ (TTFC) — `pc.tokusatsu-fc.jp`
 - TSUBURAYA IMAGINATION — `imagination.m-78.jp`
+- Disney+ — `www.disneyplus.com` *(실험)*
 
-> **beta 0.1** — 개인용으로 만든 도구입니다. 버그가 있을 수 있어요.
+> **beta 0.2.2** — 개인용으로 만든 도구입니다. 버그가 있을 수 있어요.
 
 ---
 
@@ -161,6 +162,10 @@ powershell -File tools\build-release.ps1
 - IMAGINATION 썸네일은 사이트가 외부 접근을 막아 Discord가 직접 불러오지 못합니다.
   그래서 이미지를 임시 호스트에 올려 표시합니다 (litterbox → uguu 순으로 시도)
 - 이 도구는 시청 정보를 표시할 뿐, 영상을 내려받거나 저작권 보호를 우회하지 않습니다
+
+## 변경 이력
+
+버전마다 달라진 점은 [CHANGELOG.md](CHANGELOG.md) 에 있습니다.
 
 ## 라이선스
 
