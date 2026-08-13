@@ -28,6 +28,59 @@
     ? `https://disney.images.edge.bamgrid.com/ripcut-delivery/v2/variant/disney/${id}/compose?format=jpeg&width=600`
     : '';
 
+  // ── 에피소드 썸네일 기억 ──
+  //  재생 중 플레이어가 주는 images_experience 는 전부 시리즈 레벨이라
+  //  그 화의 스틸이 들어있지 않다 (실측: 이미지 31개 전부 시리즈 것).
+  //  다행히 에피소드 카드의 링크가 재생 URL 과 같은 /play/{uuid} 라서,
+  //  목록을 지나갈 때 uuid → 썸네일 을 모아두면 재생할 때 꺼내 쓸 수 있다.
+  //  디즈니+ 는 SPA 라 목록에서 재생으로 넘어가도 이 스크립트가 살아있다.
+  //  직접 URL 로 들어온 경우엔 기억이 없으므로 시리즈 아트워크로 떨어진다.
+  const epThumbs = new Map();
+  const EP_CACHE_KEY = 'dpEpisodeThumbs';
+  const EP_CACHE_MAX = 300;
+
+  // 새로고침·다른 탭에서도 쓰도록 확장 저장소에 남긴다 (사이트 저장소는 건드리지 않는다)
+  try {
+    chrome.storage.local.get(EP_CACHE_KEY, (r) => {
+      const saved = r && r[EP_CACHE_KEY];
+      if (saved) for (const [k, v] of Object.entries(saved)) if (!epThumbs.has(k)) epThumbs.set(k, v);
+    });
+  } catch (e) { /* 저장소 없이도 동작한다 */ }
+
+  let saveTimer = null;
+  function persistThumbs() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      try {
+        // 오래된 것부터 버려 상한을 지킨다
+        const entries = [...epThumbs.entries()].slice(-EP_CACHE_MAX);
+        epThumbs.clear();
+        entries.forEach(([k, v]) => epThumbs.set(k, v));
+        chrome.storage.local.set({ [EP_CACHE_KEY]: Object.fromEntries(entries) });
+      } catch (e) {}
+    }, 2000);
+  }
+
+  const playIdOf = (href) => {
+    const m = String(href || '').match(/\/play\/([0-9a-f-]{8,})/i);
+    return m ? m[1] : '';
+  };
+
+  // 지금 페이지에 있는 "에피소드 카드 → 썸네일" 을 전부 주워 담는다
+  function harvestEpisodeThumbs() {
+    let added = 0;
+    for (const a of document.querySelectorAll('a[href*="/play/"]')) {
+      const id = playIdOf(a.getAttribute('href'));
+      if (!id || epThumbs.has(id)) continue;
+      const img = a.querySelector('img');
+      const src = img && (img.currentSrc || img.src);
+      if (!src || !/bamgrid/.test(src)) continue;
+      epThumbs.set(id, src);
+      added++;
+    }
+    if (added) persistThumbs();
+  }
+
   // ── 페이지 월드에서 오는 재생 상태 ──
   let snap = null;
   window.addEventListener('message', (e) => {
@@ -127,15 +180,18 @@
         return { seriesName: t && t !== 'Disney+' ? t : SITE_NAME, episodeTitle: '', episodeNumber: '', thumbnail: '' };
       }
       const ep = splitEpisode(s.subtitle);
+      // 그 화의 스틸을 기억해 뒀으면 그걸 쓰고, 없으면 시리즈 아트워크로 떨어진다
+      const epThumb = epThumbs.get(playIdOf(location.pathname)) || '';
       return {
         seriesName: s.title || SITE_NAME,
         episodeTitle: ep.title,
         episodeNumber: ep.number,
-        thumbnail: IMG(s.imageId),
+        thumbnail: epThumb || IMG(s.imageId),
       };
     },
 
     extractBrowsing() {
+      harvestEpisodeThumbs();   // 목록을 지나갈 때마다 에피소드 썸네일을 모아 둔다
       const p = bare();
       let page = T('page.browsing');
       let detail = '';
