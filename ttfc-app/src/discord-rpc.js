@@ -81,6 +81,18 @@ function clamp(str, max = 128) {
     return str.length > max ? str.slice(0, max - 1) + '…' : str;
 }
 
+// 디스코드의 이미지 프록시가 인증 없이 직접 불러올 수 있는 호스트.
+//  여기 없는 http 이미지는 확장이 바이트를 뽑아 앱이 재호스팅하는 경로를 탄다.
+//  ※ 이 목록은 content.js 의 needsRehost() 와 같은 뜻이어야 한다. 한쪽만 고치면
+//    "바이트는 보내는데 쓰지 않는다" 또는 그 반대가 되어 로고만 뜬다.
+const DIRECT_IMAGE_HOSTS = [
+    /\.cloudfront\.net\//i,                  // TTFC 에피소드 썸네일
+    /\bdisney\.images\.edge\.bamgrid\.com\//i, // 디즈니+ 아트워크 (쿠키 없이 200 확인)
+];
+function canDiscordLoad(url) {
+    return DIRECT_IMAGE_HOSTS.some((re) => re.test(url));
+}
+
 // Discord 는 details/state 가 2글자 미만이면 활동 전체를 거부한다.
 //  (실제로 겪음: 페이지 이름을 한국어로 바꾸자 '홈' 1글자가 되어 브라우징 표시가 통째로 막혔다.
 //   조용히 거부되고 프로필에는 아무것도 안 뜬다.)
@@ -256,9 +268,9 @@ class DiscordRichPresence {
         // http가 아니면 Dev Portal 에셋 키로 간주하고 그대로 사용
         // (시리즈 카테고리 로고 등 — 사이트 배너 URL은 외부 접근이 막혀 있음)
         if (!isHttpUrl(url)) return url;
+        if (canDiscordLoad(url)) return url;   // 재호스팅 없이 그대로 넘긴다
         const cached = this._cachedThumb(url);
         if (cached) return cached;
-        if (/\.cloudfront\.net\//i.test(url)) return url;
         return logo;
     }
 

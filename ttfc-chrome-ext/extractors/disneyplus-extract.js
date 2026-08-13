@@ -57,6 +57,21 @@
     marvel: 'marvel_logo',
   };
 
+  // 브랜드 표시 이름은 영어로 고정한다.
+  //  문서 제목은 로케일을 타서("마블"/"Marvel"/"マーベル") 보는 사람마다 달라지는데,
+  //  브랜드는 원래 이름 그대로 두는 편이 알아보기 쉽다.
+  const BRAND_NAME = {
+    disney: 'Disney',
+    pixar: 'PIXAR',
+    marvel: 'MARVEL',
+    'star-wars': 'STAR WARS',
+    'national-geographic': 'National Geographic',
+    disneyplus: 'Disney+',
+    star: 'STAR',
+  };
+  // 목록에 없는 새 브랜드는 슬러그를 사람이 읽을 형태로 (star-wars → Star Wars)
+  const prettySlug = (s) => s.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
   // 브랜드 허브 페이지의 로고 이미지 (alt 에 브랜드명이 들어있다)
   function brandLogoUrl() {
     const el = document.querySelector('[data-testid="he-title-treatment"]');
@@ -150,9 +165,11 @@
         //  목록 경로는 위에서 이미 걸러졌으므로, 새 브랜드가 생겨도 자동으로 잡힌다.
         const m = p.match(/^\/browse\/([a-z0-9-]+)\/?$/);
         if (m && !LIST_ROUTES.includes(m[1])) {
-          page = T('page.brand');
-          // 브랜드 이름은 걸러내지 않는다 — Disney+ 허브는 브랜드명이 실제로 "Disney+" 다
-          detail = docName;                                 // "마블" · "픽사" · "Disney+"
+          // 윗줄은 서비스 이름, 아랫줄은 브랜드 이름 (유빈 요청)
+          //   Disney+
+          //   PIXAR
+          page = SITE_NAME;
+          detail = BRAND_NAME[m[1]] || prettySlug(m[1]);
           banner = BRAND_ASSET[m[1]] || brandLogoUrl();     // 올린 에셋 우선, 없으면 사이트 로고
         }
       }

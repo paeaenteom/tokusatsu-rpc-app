@@ -43,9 +43,17 @@
     } catch (e) { return false; }
   }
 
+  // 디스코드가 인증 없이 직접 불러올 수 있는 호스트는 바이트를 뽑을 필요가 없다.
+  //  ※ 앱의 discord-rpc.js DIRECT_IMAGE_HOSTS 와 같은 뜻이어야 한다.
+  //    한쪽만 고치면 바이트를 보내도 쓰지 않거나 그 반대가 되어 로고만 뜬다.
+  const DIRECT_IMAGE_HOSTS = [
+    /\.cloudfront\.net\//i,                    // TTFC 에피소드 썸네일
+    /\bdisney\.images\.edge\.bamgrid\.com\//i, // 디즈니+ 아트워크 (쿠키 없이 200 확인)
+  ];
+
   function needsRehost(url) {
     if (!/^https?:/.test(url)) return false;
-    if (/\.cloudfront\.net\//i.test(url)) return false;  // 디스코드 직접 로드 OK
+    if (DIRECT_IMAGE_HOSTS.some((re) => re.test(url))) return false;
     return true;
   }
 

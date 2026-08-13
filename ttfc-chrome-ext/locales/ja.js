@@ -60,7 +60,6 @@
   'page.movies': '映画一覧',
   'page.originals': 'オリジナル',
   'page.watchlist': 'マイリスト',
-  'page.brand': 'ブランド',
   'page.mylist': 'マイリスト',
   'page.news': 'ニュース',
   'page.reading': 'ニュース·読みもの',
