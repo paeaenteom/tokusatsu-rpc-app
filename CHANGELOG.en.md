@@ -6,6 +6,21 @@ What changed in each version. Newest first.
 
 ---
 
+## 0.2.4 beta — 2026-08-14
+
+### Disney+ title pages look like the page itself
+- The title's **logo** is now drawn over the backdrop artwork (same shape as the
+  Disney+ page hero)
+- On its own the logo is very wide (4.5:1) and became a thin strip on the card.
+  With a backdrop behind it the whole square is used and the logo still reads
+- Nothing breaks if either piece is missing
+  → logo + backdrop composites / logo only / backdrop only / otherwise the site logo
+
+### Also
+- Allowed one more Disney+ image CDN (some images come from a different host)
+
+---
+
 ## 0.2.3 beta — 2026-08-14
 
 ### Thumbnails are no longer cropped
@@ -37,6 +52,7 @@ What changed in each version. Newest first.
 - Title pages show that title's **logo** (falls back to the backdrop when there is none)
 
 ---
+
 ## 0.2.2 beta — 2026-08-14
 
 ### New (all toggled in the app window under "App settings")

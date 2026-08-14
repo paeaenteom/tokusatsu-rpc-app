@@ -1,8 +1,8 @@
-Thumbnails aren't cropped any more, responsiveness is way up, and the ghost presence that stuck around after closing a tab is gone.
+Disney+ title pages now show the title's logo over its backdrop.
 
 ## Install
 
-Just grab **`TOKU-RPC-Setup-0.2.3-beta.exe`** below and run it — that one file is all you need.
+Just grab **`TOKU-RPC-Setup-0.2.4-beta.exe`** below and run it — that one file is all you need.
 The app and the browser extension are installed in one go. There's nothing else to download.
 
 - In the installer window, just **check off the browsers you want the extension in**
@@ -11,6 +11,19 @@ The app and the browser extension are installed in one go. There's nothing else 
   (That's because Windows only lets admins write to the extension policy key. The app itself installs to your own user folder)
 - After installing, **quit your browser completely and start it again**
   (Make sure it's not still running in the system tray, or the extension won't take effect)
+
+## What's new in 0.2.4
+
+### Disney+ title pages look like the page itself
+- The title's **logo** is now drawn over the backdrop artwork (same shape as the
+  Disney+ page hero)
+- On its own the logo is very wide (4.5:1) and became a thin strip on the card.
+  With a backdrop behind it the whole square is used and the logo still reads
+- Nothing breaks if either piece is missing
+  → logo + backdrop composites / logo only / backdrop only / otherwise the site logo
+
+### Also
+- Allowed one more Disney+ image CDN (some images come from a different host)
 
 ## What's new in 0.2.3
 
@@ -102,7 +115,7 @@ Per-version history is in the [CHANGELOG](https://github.com/paeaenteom/tokusats
 
 | File | What it is |
 |---|---|
-| `TOKU-RPC-Setup-0.2.3-beta.exe` | **This is the only one you need** (app bundled inside) |
+| `TOKU-RPC-Setup-0.2.4-beta.exe` | **This is the only one you need** (app bundled inside) |
 | `toku-rpc-extension.crx`, `update.xml` | For automatic extension installation and updates — the browser fetches these on its own |
 | `toku-rpc-extension.zip` | For installing the extension manually (only if the automatic install is blocked) |
 

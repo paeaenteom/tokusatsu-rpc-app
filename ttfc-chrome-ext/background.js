@@ -66,9 +66,18 @@ async function squarePad(blob, size) {
 }
 
 // dataURL(원본) → dataURL(정사각). 어떤 이유로든 실패하면 원본을 그대로 돌려준다.
-async function toSquareDataUrl(dataUrl) {
+//  bgUrl 이 있으면 그 배경 위에 얹어 합성한다 (디즈니+ 작품 로고).
+async function toSquareDataUrl(dataUrl, bgUrl) {
   try {
     const blob = await (await fetch(dataUrl)).blob();
+    if (bgUrl) {
+      try {
+        const out = await compositeSquare(await fetchImage(bgUrl), blob, SQ_SIZE);
+        if (out) return await blobToDataUrl(out);
+      } catch (e) {
+        LOG('배경 합성 실패 — 로고만 사용:', e.message);
+      }
+    }
     let out = await squarePad(blob, SQ_SIZE);
     if (!out) return dataUrl;                       // 이미 정사각 — 그대로
     if (out.size > SQ_MAX_BYTES) {
@@ -82,16 +91,67 @@ async function toSquareDataUrl(dataUrl) {
   }
 }
 
-// 워커가 직접 이미지를 받아 정사각으로 만든다.
-//  콘텐트 스크립트(page origin)는 CORS 에 막히지만, 워커는 host_permissions 로
-//  받을 수 있다 — TTFC cloudfront · 디즈니+ bamgrid 썸네일이 이 경로를 탄다.
-async function fetchSquareBytes(url) {
+// 배경 아트워크를 정사각에 꽉 채우고(cover) 그 위에 작품 로고를 얹는다.
+//  디즈니+ 작품 페이지용. 로고만 넣으면 4.5:1 이라 카드에서 아주 작은 띠가 되는데,
+//  배경을 깔면 정사각을 다 쓰면서 로고도 읽힌다 (디즈니+ 페이지 히어로와 같은 모양).
+//  배경은 장식이라 잘려도 상관없다 — 잘리면 안 되는 건 로고 쪽이다.
+async function compositeSquare(bgBlob, logoBlob, size) {
+  const s = size || SQ_SIZE;
+  const cv = new OffscreenCanvas(s, s);
+  const ctx = cv.getContext('2d');
+
+  const bg = await createImageBitmap(bgBlob);   // 실패하면 호출부가 로고만 쓰도록 던진다
+  try {
+    const k = Math.max(s / bg.width, s / bg.height);       // cover
+    const w = bg.width * k, h = bg.height * k;
+    ctx.drawImage(bg, (s - w) / 2, (s - h) / 2, w, h);
+  } finally { bg.close(); }
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';                      // 로고가 묻히지 않게
+  ctx.fillRect(0, 0, s, s);
+
+  const fg = await createImageBitmap(logoBlob);
+  try {
+    const k = Math.min((s * 0.84) / fg.width, (s * 0.44) / fg.height);   // contain — 로고는 절대 안 자른다
+    const w = fg.width * k, h = fg.height * k;
+    ctx.drawImage(fg, (s - w) / 2, (s - h) / 2, w, h);
+  } finally { fg.close(); }
+
+  return await cv.convertToBlob({ type: 'image/png' });
+}
+
+async function fetchImage(url) {
   const r = await fetch(url, { credentials: 'omit' });
   if (!r.ok) throw new Error('HTTP ' + r.status);
   const blob = await r.blob();
   if (!/^image\//.test(blob.type)) throw new Error('이미지 아님: ' + blob.type);
+  return blob;
+}
+
+// 워커가 직접 이미지를 받아 정사각으로 만든다.
+//  콘텐트 스크립트(page origin)는 CORS 에 막히지만, 워커는 host_permissions 로
+//  받을 수 있다 — TTFC cloudfront · 디즈니+ bamgrid 썸네일이 이 경로를 탄다.
+//  bgUrl 이 있으면 그 위에 얹어 합성한다. 배경을 못 받으면 조용히 로고만 쓴다.
+async function fetchSquareBytes(url, bgUrl) {
+  const blob = await fetchImage(url);
+  if (bgUrl) {
+    try {
+      const out = await compositeSquare(await fetchImage(bgUrl), blob, SQ_SIZE);
+      if (out) return await blobToDataUrl(out);
+    } catch (e) {
+      LOG('배경 합성 실패 — 로고만 사용:', e.message);
+    }
+  }
   const out = await squarePad(blob, SQ_SIZE);
   return await blobToDataUrl(out || blob);
+}
+
+// url → 배경 url. 앱이 NEED_THUMB 로 다시 요청할 때도 같은 합성본을 만들려면
+// 배경이 뭐였는지 기억하고 있어야 한다 (그 요청엔 배경 정보가 안 실린다).
+const bgFor = new Map();
+function rememberBg(url, bgUrl) {
+  if (!url || !bgUrl) return;
+  if (bgFor.size > 60) bgFor.clear();
+  bgFor.set(url, bgUrl);
 }
 
 // ── 탭 중재 (2026-07-30 버그 수정) ──
@@ -205,7 +265,7 @@ function ensureConnected() {
         else if (msg.type === 'NEED_THUMB') {
           // 앱이 특정 이미지 바이트를 요청 (캐시 없음/만료/업로드 실패 복구)
           //  ① 워커가 직접 받아 본다 — CORS 를 안 타서 가장 확실하다
-          fetchSquareBytes(msg.url)
+          fetchSquareBytes(msg.url, bgFor.get(msg.url))
             .then((dataUrl) => rawSend({ type: 'THUMB_BYTES', url: msg.url, dataUrl }))
             .catch(() => {
               //  ② 실패하면 예전처럼 탭에 요청 (사이트 세션이 있어야 열리는 이미지)
@@ -329,7 +389,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
     }
     // 보내기 전에 정사각으로 — 디스코드가 좌우를 잘라먹지 않게
-    toSquareDataUrl(msg.dataUrl).then((dataUrl) => {
+    rememberBg(msg.url, msg.bgUrl);
+    toSquareDataUrl(msg.dataUrl, msg.bgUrl || bgFor.get(msg.url)).then((dataUrl) => {
       sendResponse({ ok: rawSend({ type: 'THUMB_BYTES', url: msg.url, dataUrl }) });
     });
   } else if (msg.action === 'THUMB_FETCH') {
@@ -339,7 +400,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ ok: false });
       return true;
     }
-    fetchSquareBytes(msg.url)
+    rememberBg(msg.url, msg.bgUrl);
+    fetchSquareBytes(msg.url, msg.bgUrl || bgFor.get(msg.url))
       .then((dataUrl) => sendResponse({ ok: rawSend({ type: 'THUMB_BYTES', url: msg.url, dataUrl }) }))
       .catch((e) => {
         LOG('워커 썸네일 페치 실패:', msg.url, e.message);

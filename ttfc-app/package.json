@@ -1,6 +1,6 @@
 {
   "name": "toku-rpc",
-  "version": "0.2.3-beta",
+  "version": "0.2.4-beta",
   "description": "특촬 스트리밍(東映特撮ファンクラブ / TSUBURAYA IMAGINATION) Discord Rich Presence + 정주행 기록",
   "main": "src/main.js",
   "author": "TOKU RPC",

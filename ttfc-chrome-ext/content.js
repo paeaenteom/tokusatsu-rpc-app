@@ -67,7 +67,9 @@
   }
 
   // 현재 썸네일/배너 바이트를 앱에 1회 보낸다 (앱이 업로드 + 사용)
-  function ensureThumbBytes(url) {
+  //  bgUrl: 있으면 워커가 그 배경 위에 얹어 합성한다 (디즈니+ 작품 로고).
+  //  다른 사이트는 안 넘기므로 undefined → 예전과 똑같이 동작한다.
+  function ensureThumbBytes(url, bgUrl) {
     if (!needsRehost(url) || sentThumbs.has(url)) return;
     if ((thumbFails.get(url) || 0) >= 3) return;  // 반복 실패 → 포기 (로고 폴백)
     // 메모리 상한 — 초과 시 리셋 (재전송돼도 앱의 _thumbCache/_thumbPending이 중복 방지)
@@ -80,7 +82,7 @@
       sentThumbs.delete(url);
     };
     extractBytes(url)
-      .then((dataUrl) => chrome.runtime.sendMessage({ action: 'THUMB_BYTES', url, dataUrl }))
+      .then((dataUrl) => chrome.runtime.sendMessage({ action: 'THUMB_BYTES', url, dataUrl, bgUrl }))
       .then((r) => {
         if (r && r.ok) { LOG('썸네일 바이트 전송 OK'); }
         else { sentThumbs.delete(url); }  // 앱 미연결 등 → 다음 틱에 재시도
@@ -89,7 +91,7 @@
         // 페이지 오리진에선 CORS 로 막히는 이미지(TTFC cloudfront·디즈니+ bamgrid)가 있다.
         // 워커는 host_permissions 로 받을 수 있으니 그쪽에 넘긴다.
         LOG('페이지에서 못 가져옴 → 워커에 요청:', e.message);
-        chrome.runtime.sendMessage({ action: 'THUMB_FETCH', url })
+        chrome.runtime.sendMessage({ action: 'THUMB_FETCH', url, bgUrl })
           .then((r) => {
             if (r && r.ok) LOG('썸네일 바이트 전송 OK (워커)');
             else failed('워커도 실패');
@@ -483,7 +485,8 @@
     }
 
     const browsing = SITE.extractBrowsing();
-    ensureThumbBytes(browsing.banner || '');  // 앱에 배너 바이트 1회 전송 (imagination)
+    // 배너 바이트를 앱에 1회 전송. bannerBg 를 주는 추출기(디즈니+)는 합성본이 만들어진다.
+    ensureThumbBytes(browsing.banner || '', browsing.bannerBg || '');
     return {
       type: 'BROWSING',
       site: SITE.id,

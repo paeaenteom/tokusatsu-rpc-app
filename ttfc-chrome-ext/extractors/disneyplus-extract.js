@@ -251,6 +251,7 @@
       let page = T('page.browsing');
       let detail = '';
       let banner = '';
+      let bannerBg = '';   // 있으면 확장 워커가 이 배경 위에 banner 를 얹어 합성한다
 
       // 문서 제목이 "작품명 | 디즈니+" 형식 (og 태그·JSON-LD 는 없다)
       const docName = (document.title || '').split('|')[0].trim();
@@ -259,13 +260,16 @@
       if (/^\/browse\/entity-/.test(p)) {
         page = T('page.work');
         detail = named;
-        // 작품 로고를 먼저 (유빈 요청 — 페이지에 크게 뜨는 그 로고가 그대로 보이게).
-        // 로고 아트워크가 없는 작품도 있으므로, 없으면 예전처럼 배경 아트워크로 떨어진다.
-        banner = titleTreatmentUrl();
-        if (!banner) {
-          const img = document.querySelector('[data-testid="details-page-background-image-responsive"] img, [data-testid="details-page-background-image"] img');
-          if (img) banner = img.currentSrc || img.src || '';
-        }
+        // 작품 로고를 배경 아트워크 위에 얹어 보여준다 (유빈 요청 — 페이지에 크게 뜨는 그 로고).
+        //  로고만 쓰면 4.5:1 이라 카드에서 아주 얇은 띠가 된다. 배경을 깔면 정사각을
+        //  다 쓰면서 로고도 읽힌다. 실제 합성은 확장 워커가 한다.
+        //  단계별 폴백 — 어느 쪽이 없어도 표시가 죽지 않는다:
+        //    로고+배경 → 합성 / 로고만 → 로고 / 배경만 → 배경 / 둘 다 없음 → 사이트 로고
+        const bgImg = document.querySelector('[data-testid="details-page-background-image-responsive"] img, [data-testid="details-page-background-image"] img');
+        const bg = bgImg ? (bgImg.currentSrc || bgImg.src || '') : '';
+        const logo = titleTreatmentUrl();
+        banner = logo || bg;
+        bannerBg = logo && bg ? bg : '';
       }
       else if (/^\/browse\/page-/.test(p)) { page = T('page.workList'); detail = named; }
       else if (/^\/browse\/movies/.test(p)) page = T('page.movies');
@@ -291,7 +295,7 @@
       }
 
       if (detail === page) detail = '';
-      return { page, detail, banner };
+      return { page, detail, banner, bannerBg };
     },
 
     // 정주행: 디즈니+ 는 연속 재생이 사이트 기본 기능이라 우리가 이동시키지 않는다.
