@@ -1,8 +1,8 @@
-Disney+ title pages now show the title's logo over its backdrop.
+Tray memory is down from 315MB to 171MB, and images show up much faster.
 
 ## Install
 
-Just grab **`TOKU-RPC-Setup-0.2.4-beta.exe`** below and run it — that one file is all you need.
+Just grab **`TOKU-RPC-Setup-0.2.5-beta.exe`** below and run it — that one file is all you need.
 The app and the browser extension are installed in one go. There's nothing else to download.
 
 - In the installer window, just **check off the browsers you want the extension in**
@@ -11,6 +11,30 @@ The app and the browser extension are installed in one go. There's nothing else 
   (That's because Windows only lets admins write to the extension policy key. The app itself installs to your own user folder)
 - After installing, **quit your browser completely and start it again**
   (Make sure it's not still running in the system tray, or the extension won't take effect)
+
+## What's new in 0.2.5
+
+### Memory
+- **315MB → 171MB while sitting in the tray**
+  - Closing the window now actually destroys the process that draws it. It used to
+    only hide, so it kept holding memory the whole time (95MB measured)
+  - Reopening builds it fresh. Speed and behaviour are unchanged
+- Original image bytes were kept once per site; now they're kept once
+
+### Images appear faster
+- **The same image was uploaded three times — now once** (one upload per site connection)
+- Composited images are sent as JPEG instead of PNG (there is no transparency in them,
+  so PNG bought nothing). About a quarter of the size
+- Fixed the order images are fetched in. The path that always fails was tried first,
+  and that wasted round trip was pure waiting time
+
+### Disney+
+- **List and collection pages show the title's logo too** (previously title pages only)
+- The backdrop is fetched at full resolution (400x225 → 1920x1080). On some pages it
+  wasn't being found at all
+
+### Cleanup
+- Removed the upload path that no longer runs (no behavioural change)
 
 ## What's new in 0.2.4
 
@@ -115,7 +139,7 @@ Per-version history is in the [CHANGELOG](https://github.com/paeaenteom/tokusats
 
 | File | What it is |
 |---|---|
-| `TOKU-RPC-Setup-0.2.4-beta.exe` | **This is the only one you need** (app bundled inside) |
+| `TOKU-RPC-Setup-0.2.5-beta.exe` | **This is the only one you need** (app bundled inside) |
 | `toku-rpc-extension.crx`, `update.xml` | For automatic extension installation and updates — the browser fetches these on its own |
 | `toku-rpc-extension.zip` | For installing the extension manually (only if the automatic install is blocked) |
 

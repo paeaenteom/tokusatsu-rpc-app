@@ -81,23 +81,31 @@
       thumbFails.set(url, (thumbFails.get(url) || 0) + 1);
       sentThumbs.delete(url);
     };
-    extractBytes(url)
+
+    // 워커가 직접 받는다 — host_permissions 라 CORS 를 안 탄다
+    const viaWorker = () => chrome.runtime.sendMessage({ action: 'THUMB_FETCH', url, bgUrl })
+      .then((r) => { if (!(r && r.ok)) throw new Error('워커 실패'); LOG('썸네일 바이트 전송 OK (워커)'); });
+    // 페이지 오리진에서 받는다 — 같은 사이트 이미지는 이쪽이 한 단계 짧다
+    const viaPage = () => extractBytes(url)
       .then((dataUrl) => chrome.runtime.sendMessage({ action: 'THUMB_BYTES', url, dataUrl, bgUrl }))
       .then((r) => {
-        if (r && r.ok) { LOG('썸네일 바이트 전송 OK'); }
-        else { sentThumbs.delete(url); }  // 앱 미연결 등 → 다음 틱에 재시도
-      })
-      .catch((e) => {
-        // 페이지 오리진에선 CORS 로 막히는 이미지(TTFC cloudfront·디즈니+ bamgrid)가 있다.
-        // 워커는 host_permissions 로 받을 수 있으니 그쪽에 넘긴다.
-        LOG('페이지에서 못 가져옴 → 워커에 요청:', e.message);
-        chrome.runtime.sendMessage({ action: 'THUMB_FETCH', url, bgUrl })
-          .then((r) => {
-            if (r && r.ok) LOG('썸네일 바이트 전송 OK (워커)');
-            else failed('워커도 실패');
-          })
-          .catch((e2) => failed(e2.message));
+        if (r && r.ok) { LOG('썸네일 바이트 전송 OK'); return; }
+        sentThumbs.delete(url);   // 앱 미연결 등 → 다음 틱에 재시도. 실패로 세지 않는다
+        throw { quiet: true };
       });
+
+    // ⚠ 순서가 속도를 좌우한다. 이미지 CDN(디즈니+ bamgrid·TTFC cloudfront)은 페이지
+    //   오리진에서 CORS 로 막히는데, 예전엔 그 실패를 한 번 겪고 나서야 워커로 넘겼다.
+    //   그 헛걸음이 그대로 "이미지가 늦게 뜨는" 시간이었다.
+    //   같은 호스트 이미지만 페이지에서 먼저 받고, 나머지는 워커부터 간다.
+    let host = '';
+    try { host = new URL(url, location.href).host; } catch (e) {}
+    const first = host === location.host ? viaPage : viaWorker;
+    const second = host === location.host ? viaWorker : viaPage;
+
+    first()
+      .catch((e) => (e && e.quiet ? Promise.reject(e) : second()))
+      .catch((e) => { if (!(e && e.quiet)) failed((e && e.message) || '양쪽 다 실패'); });
   }
 
   // ── 정주행 모드 ──

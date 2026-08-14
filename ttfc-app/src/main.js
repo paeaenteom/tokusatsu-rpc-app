@@ -209,13 +209,15 @@ function createWindow(startHidden = false) {
 
     mainWindow.loadFile(path.join(__dirname, 'rpc-window.html'));
 
-    // 창 닫으면 트레이로 (백그라운드 유지)
-    mainWindow.on('close', (e) => {
-        if (!app.isQuitting) {
-            e.preventDefault();
-            mainWindow.hide();
-        }
-    });
+    // 창을 닫으면 트레이로 (앱은 계속 돈다).
+    //  ⚠ 예전엔 hide() 로 숨기기만 했다. 그러면 렌더러 프로세스가 그대로 살아
+    //    트레이에만 있는 동안에도 계속 메모리를 물고 있었다 (실측 렌더러 95MB).
+    //    시작할 때 창을 아예 안 만드는 최적화(아래 launchedHidden 분기)를 해 놓고도,
+    //    한 번 열었다 닫으면 그 이득이 통째로 사라졌다.
+    //    → 실제로 파괴하고, 다시 열 때 showWindow() 가 새로 만든다.
+    //      (첫 실행과 똑같은 경로라 동작은 그대로다. window-all-closed 는 no-op 이라
+    //       창이 없어져도 앱은 종료되지 않는다)
+    mainWindow.on('closed', () => { mainWindow = null; });
 }
 
 // ── 트레이 ──
@@ -263,7 +265,9 @@ function rebuildTrayMenu() {
 }
 
 function showWindow() {
-    if (!mainWindow) createWindow();
+    // 닫으면 파괴되므로 여기서 다시 만든다. isDestroyed 는 'closed' 가 아직 안 온
+    // 찰나를 대비한 방어 — 그 상태의 창에 show() 를 부르면 예외가 난다.
+    if (!mainWindow || mainWindow.isDestroyed()) createWindow();
     else { mainWindow.show(); mainWindow.focus(); }
 }
 

@@ -116,7 +116,10 @@ async function compositeSquare(bgBlob, logoBlob, size) {
     ctx.drawImage(fg, (s - w) / 2, (s - h) / 2, w, h);
   } finally { fg.close(); }
 
-  return await cv.convertToBlob({ type: 'image/png' });
+  // 합성본은 배경이 정사각을 꽉 채워 투명한 곳이 없다 → PNG 를 쓸 이유가 없다.
+  // JPEG 로 내보내면 용량이 1/4 로 줄어 업로드가 그만큼 빨리 끝난다(= 화면에 빨리 뜬다).
+  // 레터박스 경로는 여백이 투명해야 하므로 그쪽은 계속 PNG 다.
+  return await cv.convertToBlob({ type: 'image/jpeg', quality: 0.88 });
 }
 
 async function fetchImage(url) {

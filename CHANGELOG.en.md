@@ -6,6 +6,32 @@ What changed in each version. Newest first.
 
 ---
 
+## 0.2.5 beta — 2026-08-15
+
+### Memory
+- **315MB → 171MB while sitting in the tray**
+  - Closing the window now actually destroys the process that draws it. It used to
+    only hide, so it kept holding memory the whole time (95MB measured)
+  - Reopening builds it fresh. Speed and behaviour are unchanged
+- Original image bytes were kept once per site; now they're kept once
+
+### Images appear faster
+- **The same image was uploaded three times — now once** (one upload per site connection)
+- Composited images are sent as JPEG instead of PNG (there is no transparency in them,
+  so PNG bought nothing). About a quarter of the size
+- Fixed the order images are fetched in. The path that always fails was tried first,
+  and that wasted round trip was pure waiting time
+
+### Disney+
+- **List and collection pages show the title's logo too** (previously title pages only)
+- The backdrop is fetched at full resolution (400x225 → 1920x1080). On some pages it
+  wasn't being found at all
+
+### Cleanup
+- Removed the upload path that no longer runs (no behavioural change)
+
+---
+
 ## 0.2.4 beta — 2026-08-14
 
 ### Disney+ title pages look like the page itself

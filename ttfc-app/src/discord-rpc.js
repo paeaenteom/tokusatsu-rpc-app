@@ -241,25 +241,9 @@ class DiscordRichPresence {
         this.lastActivity = null;
 
         // 썸네일 재호스팅 캐시: 원본 URL → { url, at } (호스트 만료 대비 TTL)
+        //  ※ 업로드와 이미지 바이트 보관은 허브가 한 벌만 맡는다.
+        //    클라이언트마다 두면 사이트 수만큼 같은 사진을 중복으로 쥔다.
         this._thumbCache = new Map();
-        this._thumbPending = new Set();
-        // 원본 이미지 바이트 보관 (정주행 웹훅에 파일로 직접 첨부용)
-        //  외부 호스트는 만료되지만(litterbox 72h·uguu 3h) 디스코드에 첨부하면 영구 보존된다.
-        this._thumbBytes = new Map();
-    }
-
-    // 확장이 보낸 이미지 바이트를 기억 (업로드 성공 여부와 무관하게 보관)
-    rememberThumbBytes(url, dataUrl) {
-        const m = /^data:([^;]+);base64,(.+)$/.exec(dataUrl || '');
-        if (!url || !m) return;
-        if (this._thumbBytes.size >= 20) {
-            this._thumbBytes.delete(this._thumbBytes.keys().next().value);
-        }
-        this._thumbBytes.set(url, { buf: Buffer.from(m[2], 'base64'), type: m[1], at: Date.now() });
-    }
-
-    getThumbBytes(url) {
-        return this._thumbBytes.get(url) || null;
     }
 
     // 재호스팅 URL 조회 (만료분은 무효 처리 — litterbox 72h·uguu 3h 등)
@@ -290,40 +274,14 @@ class DiscordRichPresence {
         return logo;
     }
 
-    // 확장이 보낸 이미지 바이트를 공개 호스트에 올려 캐시 (재호스팅 필요 이미지)
-    //  완료 시, 지금 그 이미지를 표시 중이면 즉시 갱신한다.
-    //  ⚠ 호스트 전체가 일시 장애일 수 있으므로(catbox 중단 사례) 지수 백오프 재시도.
-    //    확장은 1회만 보내므로 여기서 포기하면 그 화면은 영영 로고로 남는다.
-    async cacheThumbnail(url, dataUrl, attempt = 0) {
-        if (!url) return;
-        if (attempt === 0) this.rememberThumbBytes(url, dataUrl);  // 업로드와 무관하게 바이트 확보
-        // 재시도 호출은 이미 pending을 점유한 상태이므로 중복 검사에서 제외
-        if (attempt === 0 && (this._cachedThumb(url) || this._thumbPending.has(url))) return;
-        this._thumbPending.add(url);   // 재시도 대기 동안에도 유지 → 중복 업로드 방지
-
-        let hosted = '';
-        try {
-            hosted = await uploadImage(dataUrl);
-        } catch (e) {
-            log.warn(`[RPC] 썸네일 재호스팅 실패(${attempt + 1}/4):`, e.message);
-            if (attempt < 3) {
-                const wait = 15000 * Math.pow(2, attempt);   // 15s → 30s → 60s
-                setTimeout(() => this.cacheThumbnail(url, dataUrl, attempt + 1), wait);
-            } else {
-                this._thumbPending.delete(url);              // 최종 포기 → 로고 유지
-            }
-            return;
-        }
-
-        this._thumbPending.delete(url);
-        // 캐시 상한 (오래된 것부터 제거 — Map은 삽입 순서 유지)
+    // 이미 올라간 재호스팅 URL 을 캐시에 꽂고, 지금 그걸 보여주는 중이면 즉시 갱신.
+    //  업로드는 허브가 한 번만 하고(중복 제거), 결과만 각 클라이언트가 받아 간다.
+    adoptThumb(url, hosted) {
+        if (!url || !hosted) return;
         if (this._thumbCache.size >= 60) {
             this._thumbCache.delete(this._thumbCache.keys().next().value);
         }
         this._thumbCache.set(url, { url: hosted, at: Date.now() });
-        log.info('[RPC] 썸네일 재호스팅 OK →', hosted);
-        // 프레즌스가 표시 중일 때만 갱신 트리거 (클리어 직후 부활 방지)
-        //  즉시 경로(_forceUpdate) — 업로드 끝나는 순간 로고→썸네일 교체
         const s = this.currentState;
         if (this.lastActivity) {
             if (s.isWatching && s.thumbnail === url) this._forceUpdate('watching');
@@ -796,6 +754,8 @@ class DiscordRpcHub {
         this.lang = 'ko';
         this.onStatusChange = null;
         this._enabled = true;
+        this._uploading = new Set();  // 업로드 진행 중인 원본 URL (중복 업로드 차단)
+        this._bytes = new Map();      // 원본 URL → 이미지 바이트 (허브에 한 벌만)
     }
 
     // 그 사이트 전용 클라이언트를 (없으면 만들어) 돌려준다
@@ -838,15 +798,51 @@ class DiscordRpcHub {
 
     setLang(lang) { this.lang = lang; for (const c of this.clients.values()) c.setLang(lang); }
 
-    // 썸네일 바이트는 어느 사이트 것인지 알 수 없으니 전부에게 준다.
-    // 실제로 쓰는 쪽만 캐시에 남고 나머지는 그냥 버린다.
-    cacheThumbnail(url, dataUrl) { for (const c of this.clients.values()) c.cacheThumbnail(url, dataUrl); }
+    // 썸네일 바이트 → 공개 호스트에 올려 전 클라이언트 캐시에 꽂는다.
+    //  ⚠ 2026-08-14: 예전엔 클라이언트마다 각자 올렸다(c.cacheThumbnail 을 순회).
+    //    사이트 클라이언트가 3개면 **똑같은 이미지를 3번** 업로드해, 네트워크를 3배 쓰고
+    //    화면에 뜨는 것도 그만큼 늦어졌다 (로그에서 재호스팅 OK 가 매번 3줄씩 찍혔다).
+    //    이제 허브에서 한 번만 올리고 결과 URL 만 나눠준다.
+    async cacheThumbnail(url, dataUrl, attempt = 0) {
+        if (!url) return;
+        if (attempt === 0) {
+            this.rememberThumbBytes(url, dataUrl);              // 업로드와 무관하게 바이트 확보
+            if (this._cachedThumb(url) || this._uploading.has(url)) return;
+        }
+        this._uploading.add(url);   // 재시도 대기 중에도 유지 → 중복 업로드 방지
+
+        let hosted = '';
+        try {
+            hosted = await uploadImage(dataUrl);
+        } catch (e) {
+            log.warn(`[RPC] 썸네일 재호스팅 실패(${attempt + 1}/4):`, e.message);
+            if (attempt < 3) {
+                const wait = 15000 * Math.pow(2, attempt);      // 15s → 30s → 60s
+                setTimeout(() => this.cacheThumbnail(url, dataUrl, attempt + 1), wait);
+            } else {
+                this._uploading.delete(url);                    // 최종 포기 → 로고 유지
+            }
+            return;
+        }
+
+        this._uploading.delete(url);
+        log.info('[RPC] 썸네일 재호스팅 OK →', hosted);
+        for (const c of this.clients.values()) c.adoptThumb(url, hosted);
+    }
+    // 이미지 바이트는 허브에 딱 한 벌만 둔다.
+    //  ⚠ 예전엔 클라이언트마다 각자 20장씩 들고 있었다. 사이트가 3개면 **같은 사진을
+    //    3벌** 쥐는 셈이라, 정주행 웹훅용 바이트 하나 때문에 수 MB 를 그냥 낭비했다.
+    //    (getThumbBytes 를 쓰는 곳은 binge-webhook 한 군데뿐인데 거기도 허브로 묻는다)
     rememberThumbBytes(url, dataUrl) {
-        for (const c of this.clients.values()) if (c.rememberThumbBytes) c.rememberThumbBytes(url, dataUrl);
+        const m = /^data:([^;]+);base64,(.+)$/.exec(dataUrl || '');
+        if (!url || !m) return;
+        if (this._bytes.size >= 20) {                       // 상한은 예전과 같다
+            this._bytes.delete(this._bytes.keys().next().value);
+        }
+        this._bytes.set(url, { buf: Buffer.from(m[2], 'base64'), type: m[1], at: Date.now() });
     }
     getThumbBytes(url) {
-        for (const c of this.clients.values()) { const b = c.getThumbBytes && c.getThumbBytes(url); if (b) return b; }
-        return null;
+        return this._bytes.get(url) || null;
     }
     _resolveImage(url, logo) {
         // 캐시를 가진 클라이언트가 있으면 그 결과를 쓴다 (재호스팅 URL 확보용)
@@ -861,9 +857,11 @@ class DiscordRpcHub {
         return '';
     }
     // 어느 클라이언트든 올리는 중이면 "진행 중"으로 본다 (중복 요청 방지)
+    // 업로드가 도는 동안엔 앱이 NEED_THUMB 을 또 보내지 않게 한다.
+    //  extension-bridge._requestThumbIfNeeded 가 이걸 본다.
     get _thumbPending() {
-        const clients = this.clients;
-        return { has: (url) => { for (const c of clients.values()) if (c._thumbPending.has(url)) return true; return false; } };
+        const uploading = this._uploading;
+        return { has: (url) => uploading.has(url) };
     }
 
     // 미니 창에는 대표 하나만 보여준다 — 재생 중인 쪽을 우선한다

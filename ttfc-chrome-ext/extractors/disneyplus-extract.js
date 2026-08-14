@@ -173,16 +173,45 @@
   // 목록에 없는 새 브랜드는 슬러그를 사람이 읽을 형태로 (star-wars → Star Wars)
   const prettySlug = (s) => s.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 
-  // 타이틀 트리트먼트 = 그 페이지의 "로고 이미지".
-  //  ・브랜드 허브(/browse/marvel 등) → he-title-treatment  : 브랜드 로고
-  //  ・작품 페이지(/browse/entity-…)   → details-title-treatment : 작품 로고
-  //    (2026-08-14 실측: disney.images.edge.bamgrid.com/…/trim?format=webp,
-  //     800x176 = 4.55:1 의 가로로 긴 로고. alt 에 작품명이 들어 있다)
-  //  한 페이지에 둘 중 하나만 존재하므로 한 번에 물어봐도 안전하다.
-  function titleTreatmentUrl() {
-    const el = document.querySelector('[data-testid="he-title-treatment"], [data-testid="details-title-treatment"]');
-    const img = el && (el.tagName === 'IMG' ? el : el.querySelector('img'));
+  // ⚠ 디즈니+ 는 같은 자리에 <img> 를 그대로 두기도 하고 <div> 로 감싸기도 한다.
+  //   그래서 '[testid] img' 로 쓰면 요소 자체가 <img> 인 경우를 통째로 놓친다
+  //   (2026-08-14: 이것 때문에 배경 아트워크가 저해상도로 잡히거나 아예 안 잡혔다).
+  function imgSrcOf(el) {
+    if (!el) return '';
+    const img = el.tagName === 'IMG' ? el : el.querySelector('img');
     return img ? (img.currentSrc || img.src || '') : '';
+  }
+
+  // 타이틀 트리트먼트 = 그 페이지의 "로고 이미지". 페이지 종류마다 testid 가 다르다.
+  //  ・작품 페이지(/browse/entity-…)          → details-title-treatment  실측 800x176 (4.55:1)
+  //  ・목록·브랜드 페이지(/browse/page-·/browse/marvel) → he-title-treatment  실측 800x400 (2:1)
+  //  한 페이지에 둘 중 하나만 존재하므로 한 번에 물어봐도 안전하다. alt 에 작품명이 들어 있다.
+  function titleTreatmentUrl() {
+    return imgSrcOf(document.querySelector('[data-testid="he-title-treatment"], [data-testid="details-title-treatment"]'));
+  }
+
+  // 배경 아트워크. -responsive 를 먼저 본다 — 1920x1080 로 나머지(400x225)보다 5배 크다.
+  const BACKDROP_SELECTORS = [
+    '[data-testid="details-page-background-image-responsive"]',        // 작품 페이지
+    '[data-testid="high-emphasis-page-background-image-responsive"]',  // 목록·브랜드 페이지
+    '[data-testid="details-page-background-image"]',
+    '[data-testid="high-emphasis-page-background-image"]',
+  ];
+  function backdropUrl() {
+    for (const sel of BACKDROP_SELECTORS) {
+      const u = imgSrcOf(document.querySelector(sel));
+      if (u) return u;
+    }
+    return '';
+  }
+
+  // 페이지 상단 히어로를 그대로 카드로. 확장 워커가 배경 위에 로고를 얹어 합성한다.
+  //  단계별 폴백 — 어느 쪽이 없어도 표시가 죽지 않는다:
+  //   로고+배경 → 합성 / 로고만 → 로고 / 배경만 → 배경 / 둘 다 없음 → 호출부가 사이트 로고로
+  function heroBanner() {
+    const logo = titleTreatmentUrl();
+    const bg = backdropUrl();
+    return { banner: logo || bg, bannerBg: logo && bg ? bg : '' };
   }
 
   // "시즌 1: 1회 새벽 3시" → { number: '시즌 1: 1회', title: '새벽 3시' }
@@ -260,18 +289,14 @@
       if (/^\/browse\/entity-/.test(p)) {
         page = T('page.work');
         detail = named;
-        // 작품 로고를 배경 아트워크 위에 얹어 보여준다 (유빈 요청 — 페이지에 크게 뜨는 그 로고).
-        //  로고만 쓰면 4.5:1 이라 카드에서 아주 얇은 띠가 된다. 배경을 깔면 정사각을
-        //  다 쓰면서 로고도 읽힌다. 실제 합성은 확장 워커가 한다.
-        //  단계별 폴백 — 어느 쪽이 없어도 표시가 죽지 않는다:
-        //    로고+배경 → 합성 / 로고만 → 로고 / 배경만 → 배경 / 둘 다 없음 → 사이트 로고
-        const bgImg = document.querySelector('[data-testid="details-page-background-image-responsive"] img, [data-testid="details-page-background-image"] img');
-        const bg = bgImg ? (bgImg.currentSrc || bgImg.src || '') : '';
-        const logo = titleTreatmentUrl();
-        banner = logo || bg;
-        bannerBg = logo && bg ? bg : '';
+        ({ banner, bannerBg } = heroBanner());
       }
-      else if (/^\/browse\/page-/.test(p)) { page = T('page.workList'); detail = named; }
+      else if (/^\/browse\/page-/.test(p)) {
+        // 여기도 상단에 작품 로고가 크게 뜬다 (유빈 요청 — 예도 옮겨줘).
+        page = T('page.workList');
+        detail = named;
+        ({ banner, bannerBg } = heroBanner());
+      }
       else if (/^\/browse\/movies/.test(p)) page = T('page.movies');
       else if (/^\/browse\/series/.test(p)) page = T('page.seriesList');
       else if (/^\/browse\/originals/.test(p)) page = T('page.originals');
@@ -290,7 +315,9 @@
           //   PIXAR
           page = SITE_NAME;
           detail = BRAND_NAME[m[1]] || prettySlug(m[1]);
-          banner = BRAND_ASSET[m[1]] || titleTreatmentUrl();  // 올린 에셋 우선, 없으면 페이지의 브랜드 로고
+          // 올린 에셋(마블)이 있으면 그것, 없으면 페이지 히어로를 그대로 (로고+배경 합성)
+          if (BRAND_ASSET[m[1]]) { banner = BRAND_ASSET[m[1]]; bannerBg = ''; }
+          else ({ banner, bannerBg } = heroBanner());
         }
       }
 
