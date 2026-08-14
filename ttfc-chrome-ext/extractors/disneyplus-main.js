@@ -112,6 +112,25 @@
   }
   tick();
 
+  // ── 재생 상태는 폴링을 기다리지 말고 이벤트로 즉시 (2026-08-14) ──
+  //  폴링만 쓰면 재생/일시정지가 최악 400ms(부스터 150ms) 늦게 잡혔다.
+  //  video 이벤트는 상태가 바뀌는 그 순간에 오므로 여기서 바로 tick() 하면 0ms 다.
+  //  ⚠ timeupdate 는 절대 넣지 않는다 — 초당 4회씩 들어와 CPU 를 잡아먹는다.
+  //    시간 진행은 Discord 가 타임스탬프로 알아서 그린다.
+  //  폴링은 그대로 둔다. 이벤트를 놓치거나 플레이어가 교체될 때의 안전망이다.
+  const VIDEO_EVENTS = ['play', 'pause', 'playing', 'seeked', 'ended', 'loadedmetadata', 'ratechange'];
+  function hookVideo() {
+    const v = document.querySelector('video[id^="hivePlayer"]');
+    if (!v || v._tokuRpcDpHooked) return;
+    // latestUiState 가 갱신될 틈을 아주 조금 준 뒤 읽는다 (이벤트가 먼저 올 수 있다)
+    const fire = () => { tick(); setTimeout(tick, 60); };
+    VIDEO_EVENTS.forEach((e) => v.addEventListener(e, fire));
+    v._tokuRpcDpHooked = true;
+  }
+  hookVideo();
+  // 플레이어는 SPA 라 나중에 붙고 교체되기도 한다
+  new MutationObserver(hookVideo).observe(document.documentElement, { childList: true, subtree: true });
+
   // 격리 월드가 늦게 붙어도 첫 값을 받을 수 있게, 요청이 오면 즉시 한 번 더 보낸다
   window.addEventListener('message', (e) => {
     if (e.source !== window || !e.data) return;

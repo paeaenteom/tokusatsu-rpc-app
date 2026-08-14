@@ -43,18 +43,15 @@
     } catch (e) { return false; }
   }
 
-  // 디스코드가 인증 없이 직접 불러올 수 있는 호스트는 바이트를 뽑을 필요가 없다.
-  //  ※ 앱의 discord-rpc.js DIRECT_IMAGE_HOSTS 와 같은 뜻이어야 한다.
-  //    한쪽만 고치면 바이트를 보내도 쓰지 않거나 그 반대가 되어 로고만 뜬다.
-  const DIRECT_IMAGE_HOSTS = [
-    /\.cloudfront\.net\//i,                    // TTFC 에피소드 썸네일
-    /\bdisney\.images\.edge\.bamgrid\.com\//i, // 디즈니+ 아트워크 (쿠키 없이 200 확인)
-  ];
-
+  // 이제 http(s) 썸네일은 전부 바이트를 뽑는다.
+  //  ⚠ 예전엔 "디스코드가 직접 불러올 수 있는 호스트(cloudfront·bamgrid)"는 건너뛰고
+  //    원본 URL 을 그대로 넘겼다. 그런데 디스코드는 large_image 를 정사각으로
+  //    잘라(cover) 그리기 때문에 16:9 썸네일이 좌우 43% 잘린 채 떴다.
+  //    → 워커에서 정사각으로 만들어 재호스팅해야 하므로 이제 전부 바이트가 필요하다.
+  //    (호스트 판정 자체는 앱의 DIRECT_IMAGE_HOSTS 에 그대로 남아 있다 —
+  //     정사각본이 준비되기 전까지 잘린 원본이라도 즉시 띄우는 용도)
   function needsRehost(url) {
-    if (!/^https?:/.test(url)) return false;
-    if (DIRECT_IMAGE_HOSTS.some((re) => re.test(url))) return false;
-    return true;
+    return /^https?:/.test(url);
   }
 
   async function extractBytes(url) {
@@ -77,6 +74,11 @@
     if (sentThumbs.size > 100) sentThumbs.clear();
     if (thumbFails.size > 100) thumbFails.clear();
     sentThumbs.add(url);
+    const failed = (why) => {
+      LOG('썸네일 바이트 추출/전송 실패:', why);
+      thumbFails.set(url, (thumbFails.get(url) || 0) + 1);
+      sentThumbs.delete(url);
+    };
     extractBytes(url)
       .then((dataUrl) => chrome.runtime.sendMessage({ action: 'THUMB_BYTES', url, dataUrl }))
       .then((r) => {
@@ -84,9 +86,15 @@
         else { sentThumbs.delete(url); }  // 앱 미연결 등 → 다음 틱에 재시도
       })
       .catch((e) => {
-        LOG('썸네일 바이트 추출/전송 실패:', e.message);
-        thumbFails.set(url, (thumbFails.get(url) || 0) + 1);
-        sentThumbs.delete(url);
+        // 페이지 오리진에선 CORS 로 막히는 이미지(TTFC cloudfront·디즈니+ bamgrid)가 있다.
+        // 워커는 host_permissions 로 받을 수 있으니 그쪽에 넘긴다.
+        LOG('페이지에서 못 가져옴 → 워커에 요청:', e.message);
+        chrome.runtime.sendMessage({ action: 'THUMB_FETCH', url })
+          .then((r) => {
+            if (r && r.ok) LOG('썸네일 바이트 전송 OK (워커)');
+            else failed('워커도 실패');
+          })
+          .catch((e2) => failed(e2.message));
       });
   }
 
@@ -643,18 +651,31 @@
   });
 
   // ── 탭 표시/숨김 ──
+  //  ⚠ site 를 반드시 실어 보낸다. 안 보내면 워커가 siteOfTab 으로 복원하는데,
+  //    탭 상태가 이미 지워진 뒤면 빈 문자열이 되고 앱에서 "사이트 지정 없음"
+  //    = 모든 사이트 지우기로 승격돼 보고 있던 다른 사이트까지 같이 꺼진다.
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       const video = SITE.getVideoElement();
       const playing = video && !video.paused && !video.ended;
       if (!playing) {
         LOG('탭 숨김 → CLEAR');
-        chrome.runtime.sendMessage({ action: 'CLEAR' }).catch(() => {});
+        chrome.runtime.sendMessage({ action: 'CLEAR', site: SITE.id }).catch(() => {});
         lastStateStr = '';
       }
     } else {
       sendUpdate(true);
     }
+  });
+
+  // ── 문서가 사라질 때 (탭 닫기·타 사이트로 이동·새로고침) ──
+  //  위 visibilitychange 는 "재생 중이면 안 지운다"가 옳다 — 잠깐 다른 창을 봐도
+  //  프레즌스가 꺼지면 안 되니까. 하지만 문서가 통째로 없어지는 건 다른 얘기다.
+  //  이때 알리지 않으면 그 사이트 상태가 앱에 얼어붙은 채 남는다(유령 프레즌스).
+  //  워커의 onRemoved 가 주 경로이고 이건 보조 경로 — 전달이 보장되진 않지만
+  //  타 사이트로 이동(탭은 살아 있어 onRemoved 가 안 도는 경우)은 이쪽만 잡을 수 있다.
+  window.addEventListener('pagehide', () => {
+    try { chrome.runtime.sendMessage({ action: 'CLEAR', site: SITE.id }).catch(() => {}); } catch (e) {}
   });
 
   LOG(`Content script 로드됨 — site: ${SITE.id} (${SITE.siteName})`);

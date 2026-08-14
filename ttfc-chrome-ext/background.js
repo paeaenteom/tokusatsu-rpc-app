@@ -23,6 +23,77 @@ const LOG = (...a) => console.log('[TOKU RPC/bg]', ...a);
 //  ※ catbox 등은 확장의 chrome-extension Origin을 거부(412) → 확장에서 직접 못 올림.
 //    Origin 헤더가 없는 Node 요청이어야 통과하므로 업로드는 앱에서 수행.
 
+// ── 썸네일 정사각 패딩 (2026-08-14) ──
+//  디스코드는 large_image 를 "정사각 틀에 꽉 채워(cover)" 그린다. 16:9 썸네일을
+//  그대로 넘기면 좌우 43%가 잘려 나가 화면 한가운데만 남는다.
+//  → 원본을 정사각 캔버스 한가운데에 통째로 얹고 남는 위아래는 투명하게 둔다.
+//    투명 PNG 라 디스코드 카드 배경이 그대로 비쳐 여백이 티나지 않는다.
+//  (PreMiD 도 YouTube 썸네일을 같은 이유로 320x320 캔버스에 얹어 보낸다)
+//  ⚠ 실패하면 반드시 원본을 그대로 돌려준다 — 예전 동작(잘린 썸네일)이 유지될 뿐
+//    썸네일이 사라지지는 않아야 한다.
+const SQ_SIZE = 512;          // 캔버스 한 변
+const SQ_SIZE_SMALL = 384;    // PNG 가 너무 크면 한 단계 줄인다
+const SQ_MAX_BYTES = 900 * 1024;
+
+// Blob → dataURL. 서비스 워커엔 FileReader 가 없어 직접 base64 로 만든다.
+async function blobToDataUrl(blob) {
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  let bin = '';
+  const CHUNK = 0x8000;   // 한 번에 넘기면 인자 수 초과로 터진다
+  for (let i = 0; i < buf.length; i += CHUNK) {
+    bin += String.fromCharCode.apply(null, buf.subarray(i, i + CHUNK));
+  }
+  return 'data:' + (blob.type || 'image/png') + ';base64,' + btoa(bin);
+}
+
+// 정사각 캔버스 한가운데에 원본 전체를 얹는다. 이미 정사각이면 null(=손대지 않음).
+async function squarePad(blob, size) {
+  const bmp = await createImageBitmap(blob);
+  try {
+    const w = bmp.width, h = bmp.height;
+    if (!w || !h) throw new Error('빈 이미지');
+    // 이미 정사각이면 재인코딩할 이유가 없다 (용량만 늘고 화질만 깎인다)
+    if (Math.abs(w - h) / Math.max(w, h) < 0.02) return null;
+    const s = size || SQ_SIZE;
+    const scale = Math.min(s / w, s / h);
+    const dw = Math.round(w * scale), dh = Math.round(h * scale);
+    const cv = new OffscreenCanvas(s, s);
+    cv.getContext('2d').drawImage(bmp, Math.round((s - dw) / 2), Math.round((s - dh) / 2), dw, dh);
+    return await cv.convertToBlob({ type: 'image/png' });
+  } finally {
+    bmp.close();
+  }
+}
+
+// dataURL(원본) → dataURL(정사각). 어떤 이유로든 실패하면 원본을 그대로 돌려준다.
+async function toSquareDataUrl(dataUrl) {
+  try {
+    const blob = await (await fetch(dataUrl)).blob();
+    let out = await squarePad(blob, SQ_SIZE);
+    if (!out) return dataUrl;                       // 이미 정사각 — 그대로
+    if (out.size > SQ_MAX_BYTES) {
+      const small = await squarePad(blob, SQ_SIZE_SMALL);
+      if (small) out = small;
+    }
+    return await blobToDataUrl(out);
+  } catch (e) {
+    LOG('정사각 변환 실패 — 원본 사용:', e.message);
+    return dataUrl;
+  }
+}
+
+// 워커가 직접 이미지를 받아 정사각으로 만든다.
+//  콘텐트 스크립트(page origin)는 CORS 에 막히지만, 워커는 host_permissions 로
+//  받을 수 있다 — TTFC cloudfront · 디즈니+ bamgrid 썸네일이 이 경로를 탄다.
+async function fetchSquareBytes(url) {
+  const r = await fetch(url, { credentials: 'omit' });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const blob = await r.blob();
+  if (!/^image\//.test(blob.type)) throw new Error('이미지 아님: ' + blob.type);
+  const out = await squarePad(blob, SQ_SIZE);
+  return await blobToDataUrl(out || blob);
+}
+
 // ── 탭 중재 (2026-07-30 버그 수정) ──
 //  TTFC와 IMAGINATION 탭을 동시에 열면 두 탭이 각자 상태를 보내,
 //  Discord 프레즌스가 두 작품 사이에서 깜빡이고 정주행 웹훅이 폭주했다.
@@ -82,7 +153,17 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   if (ownerBySite.get(site) === tabId) {
     ownerBySite.delete(site);
     // 같은 사이트의 다른 탭이 남아 있으면 그쪽이 이어받고, 없으면 그 사이트만 지운다
-    if (chooseOwner(site) == null && connected) rawSend({ type: 'CLEAR', site });
+    if (chooseOwner(site) == null) {
+      // ⚠ 2026-08-14 유령 프레즌스 수정.
+      //   예전 코드: `if (chooseOwner(site) == null && connected)`
+      //   그런데 `connected` 는 이 스코프에 없다 — onMessage 콜백 안의 지역 const 뿐이다.
+      //   → ReferenceError 로 리스너가 그 자리에서 죽어 CLEAR 가 영영 안 나갔다.
+      //   하필 단축평가 때문에 왼쪽이 true 인 경우, 즉 "CLEAR 를 보내야 하는 바로 그때"만
+      //   터져서 아무도 못 알아챘다. (탭이 남아 있으면 오른쪽을 읽지도 않아 조용히 지나감)
+      lastBySite.delete(site);   // 안 지우면 재연결 때 onopen 이 닫힌 탭 상태를 되올린다
+      if (ws && ws.readyState === WebSocket.OPEN) rawSend({ type: 'CLEAR', site });
+      else ensureConnected();
+    }
   }
 });
 
@@ -123,11 +204,17 @@ function ensureConnected() {
         if (msg.type === 'PONG') LOG('PONG 수신 (연결 정상)');
         else if (msg.type === 'NEED_THUMB') {
           // 앱이 특정 이미지 바이트를 요청 (캐시 없음/만료/업로드 실패 복구)
-          chrome.tabs.query({}, (tabs) => {
-            for (const t of tabs) {
-              chrome.tabs.sendMessage(t.id, { action: 'NEED_THUMB', url: msg.url }).catch(() => {});
-            }
-          });
+          //  ① 워커가 직접 받아 본다 — CORS 를 안 타서 가장 확실하다
+          fetchSquareBytes(msg.url)
+            .then((dataUrl) => rawSend({ type: 'THUMB_BYTES', url: msg.url, dataUrl }))
+            .catch(() => {
+              //  ② 실패하면 예전처럼 탭에 요청 (사이트 세션이 있어야 열리는 이미지)
+              chrome.tabs.query({}, (tabs) => {
+                for (const t of tabs) {
+                  chrome.tabs.sendMessage(t.id, { action: 'NEED_THUMB', url: msg.url }).catch(() => {});
+                }
+              });
+            });
         }
         else if (msg.type === 'BOOSTER') {
           // 앱이 부스터를 켜고 끔 — 콘텐트 스크립트가 storage 를 보고 주기를 바꾼다
@@ -236,12 +323,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   } else if (msg.action === 'THUMB_BYTES') {
     // 썸네일 바이트를 앱으로 전달 (앱이 catbox 업로드 + 사용)
     // 연결 안 됐으면 ok:false → content가 다음 틱에 재시도 (상태 큐를 안 뺏음)
-    if (connected) {
-      sendResponse({ ok: rawSend({ type: 'THUMB_BYTES', url: msg.url, dataUrl: msg.dataUrl }) });
-    } else {
+    if (!connected) {
       ensureConnected();
       sendResponse({ ok: false });
+      return true;
     }
+    // 보내기 전에 정사각으로 — 디스코드가 좌우를 잘라먹지 않게
+    toSquareDataUrl(msg.dataUrl).then((dataUrl) => {
+      sendResponse({ ok: rawSend({ type: 'THUMB_BYTES', url: msg.url, dataUrl }) });
+    });
+  } else if (msg.action === 'THUMB_FETCH') {
+    // 콘텐트 스크립트가 CORS 로 못 가져온 이미지 — 워커가 직접 받는다
+    if (!connected) {
+      ensureConnected();
+      sendResponse({ ok: false });
+      return true;
+    }
+    fetchSquareBytes(msg.url)
+      .then((dataUrl) => sendResponse({ ok: rawSend({ type: 'THUMB_BYTES', url: msg.url, dataUrl }) }))
+      .catch((e) => {
+        LOG('워커 썸네일 페치 실패:', msg.url, e.message);
+        sendResponse({ ok: false });
+      });
   }
   return true;  // 비동기 sendResponse 위해 채널 유지
 });

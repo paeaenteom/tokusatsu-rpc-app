@@ -1,8 +1,8 @@
-Update notifications, start-at-logon and a booster are in, and the 0.2 connection bug is fixed.
+Thumbnails aren't cropped any more, responsiveness is way up, and the ghost presence that stuck around after closing a tab is gone.
 
 ## Install
 
-Just grab **`TOKU-RPC-Setup-0.2.2-beta.exe`** below and run it — that one file is all you need.
+Just grab **`TOKU-RPC-Setup-0.2.3-beta.exe`** below and run it — that one file is all you need.
 The app and the browser extension are installed in one go. There's nothing else to download.
 
 - In the installer window, just **check off the browsers you want the extension in**
@@ -11,6 +11,35 @@ The app and the browser extension are installed in one go. There's nothing else 
   (That's because Windows only lets admins write to the extension policy key. The app itself installs to your own user folder)
 - After installing, **quit your browser completely and start it again**
   (Make sure it's not still running in the system tray, or the extension won't take effect)
+
+## What's new in 0.2.3
+
+### Thumbnails are no longer cropped
+- Discord draws the large image **cropped to a square** → a 16:9 thumbnail lost
+  43% of its width and only the middle survived
+- The whole frame is now fitted inside a square before sending (transparent
+  padding above and below) → **TTFC, IMAGINATION and Disney+ alike**
+
+### Responsiveness — effectively instant
+- Changes reach Discord **immediately** instead of waiting
+  - Every change used to sit through a fixed 0.5s (1s while browsing).
+    **That is why the booster never felt different** — only the extension got
+    faster while the app added the same delay back every time
+  - Discord's limit (5 per 20s) is still respected; spacing kicks in only on rapid changes
+- Disney+ play/pause comes from the player's own events (previously up to 0.4s late)
+- The booster is a safety net now. Leaving it off costs you almost nothing and saves CPU
+
+### Fixed
+- **Presence stayed up after closing the tab** — the tab-close handler read a
+  variable that doesn't exist and died, so the notice failed precisely when it
+  was needed
+  - Closed tabs no longer come back to life on reconnect
+  - New app-side safety net: a presence is dropped after 5 minutes of silence
+- **Closing one site also turned off the others**
+- **A cleared presence wouldn't come back** for the same screen (while paused)
+
+### Disney+
+- Title pages show that title's **logo** (falls back to the backdrop when there is none)
 
 ## What's new in 0.2.2
 
@@ -73,7 +102,7 @@ Per-version history is in the [CHANGELOG](https://github.com/paeaenteom/tokusats
 
 | File | What it is |
 |---|---|
-| `TOKU-RPC-Setup-0.2.2-beta.exe` | **This is the only one you need** (app bundled inside) |
+| `TOKU-RPC-Setup-0.2.3-beta.exe` | **This is the only one you need** (app bundled inside) |
 | `toku-rpc-extension.crx`, `update.xml` | For automatic extension installation and updates — the browser fetches these on its own |
 | `toku-rpc-extension.zip` | For installing the extension manually (only if the automatic install is blocked) |
 

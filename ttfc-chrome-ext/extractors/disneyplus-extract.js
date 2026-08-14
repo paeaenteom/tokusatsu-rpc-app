@@ -173,9 +173,14 @@
   // 목록에 없는 새 브랜드는 슬러그를 사람이 읽을 형태로 (star-wars → Star Wars)
   const prettySlug = (s) => s.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 
-  // 브랜드 허브 페이지의 로고 이미지 (alt 에 브랜드명이 들어있다)
-  function brandLogoUrl() {
-    const el = document.querySelector('[data-testid="he-title-treatment"]');
+  // 타이틀 트리트먼트 = 그 페이지의 "로고 이미지".
+  //  ・브랜드 허브(/browse/marvel 등) → he-title-treatment  : 브랜드 로고
+  //  ・작품 페이지(/browse/entity-…)   → details-title-treatment : 작품 로고
+  //    (2026-08-14 실측: disney.images.edge.bamgrid.com/…/trim?format=webp,
+  //     800x176 = 4.55:1 의 가로로 긴 로고. alt 에 작품명이 들어 있다)
+  //  한 페이지에 둘 중 하나만 존재하므로 한 번에 물어봐도 안전하다.
+  function titleTreatmentUrl() {
+    const el = document.querySelector('[data-testid="he-title-treatment"], [data-testid="details-title-treatment"]');
     const img = el && (el.tagName === 'IMG' ? el : el.querySelector('img'));
     return img ? (img.currentSrc || img.src || '') : '';
   }
@@ -254,8 +259,13 @@
       if (/^\/browse\/entity-/.test(p)) {
         page = T('page.work');
         detail = named;
-        const img = document.querySelector('[data-testid="details-page-background-image-responsive"] img, [data-testid="details-page-background-image"] img');
-        if (img) banner = img.currentSrc || img.src || '';
+        // 작품 로고를 먼저 (유빈 요청 — 페이지에 크게 뜨는 그 로고가 그대로 보이게).
+        // 로고 아트워크가 없는 작품도 있으므로, 없으면 예전처럼 배경 아트워크로 떨어진다.
+        banner = titleTreatmentUrl();
+        if (!banner) {
+          const img = document.querySelector('[data-testid="details-page-background-image-responsive"] img, [data-testid="details-page-background-image"] img');
+          if (img) banner = img.currentSrc || img.src || '';
+        }
       }
       else if (/^\/browse\/page-/.test(p)) { page = T('page.workList'); detail = named; }
       else if (/^\/browse\/movies/.test(p)) page = T('page.movies');
@@ -276,7 +286,7 @@
           //   PIXAR
           page = SITE_NAME;
           detail = BRAND_NAME[m[1]] || prettySlug(m[1]);
-          banner = BRAND_ASSET[m[1]] || brandLogoUrl();     // 올린 에셋 우선, 없으면 사이트 로고
+          banner = BRAND_ASSET[m[1]] || titleTreatmentUrl();  // 올린 에셋 우선, 없으면 페이지의 브랜드 로고
         }
       }
 

@@ -6,6 +6,37 @@ What changed in each version. Newest first.
 
 ---
 
+## 0.2.3 beta — 2026-08-14
+
+### Thumbnails are no longer cropped
+- Discord draws the large image **cropped to a square**, so a 16:9 thumbnail
+  lost 43% of its width and only the middle survived
+- The whole frame is now fitted inside a square before sending (transparent
+  padding above and below) → **TTFC, IMAGINATION and Disney+ alike**
+
+### Responsiveness
+- Changes now reach Discord **immediately** instead of waiting
+  - Every change used to sit through a fixed 0.5s (1s while browsing).
+    **That is why the booster never felt different** — only the extension got
+    faster while the app added the same delay back every time
+  - Discord's limit (5 per 20s) is still respected; spacing kicks in only on rapid changes
+- Disney+ play/pause is picked up from the player's own events (previously up to 0.4s late)
+
+### Fixed
+- **Presence stayed up after closing the tab** — the tab-close handler read a
+  variable that doesn't exist and died, so the notice failed precisely when it
+  was needed
+  - Closed tabs no longer come back to life on reconnect
+  - The app has its own safety net now: it drops a presence after 5 minutes of
+    silence from the extension (the 30s refresh kept resetting the old one, so
+    it never fired)
+- **Closing one site also turned off the others**
+- **A cleared presence wouldn't come back** for the same screen (while paused)
+
+### Disney+
+- Title pages show that title's **logo** (falls back to the backdrop when there is none)
+
+---
 ## 0.2.2 beta — 2026-08-14
 
 ### New (all toggled in the app window under "App settings")

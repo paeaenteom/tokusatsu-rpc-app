@@ -23,7 +23,15 @@ const log = require('electron-log');
 const secrets = require('./secrets');
 const i18n = require('./i18n');
 
-const MIN_UPDATE_INTERVAL = 1000; // Discord 안전 간격 (변경 이벤트는 _forceUpdate의 500ms 경로)
+// ── Discord 전송 속도 (2026-08-14 전면 교체) ──
+//  예전: 변경이 생길 때마다 무조건 기다렸다 — 일반 1000ms, 변경 이벤트도 500ms.
+//        확장 부스터를 켜도 체감이 그대로였던 진짜 이유가 이것이다.
+//        확장만 빨라지고 앱이 매번 같은 시간을 다시 깔아버렸다.
+//  지금: 토큰 버킷. Discord RPC 는 SET_ACTIVITY 를 20초에 5번까지 받는데,
+//        평소(가끔 재생/일시정지/화 넘김)엔 토큰이 남아 있으므로 **대기 0ms 로 즉시** 나간다.
+//        진짜 연타일 때만 한도에 맞춰 간격을 벌린다 — 한도를 넘지 않는 건 그대로다.
+const RPC_BURST = 5;         // 몰아서 즉시 보낼 수 있는 횟수
+const RPC_REFILL_MS = 4000;  // 토큰 1개 회복 시간 (5개 / 20초)
 const THUMB_TTL = 2 * 60 * 60 * 1000; // 재호스팅 URL 유효기간 2시간 (uguu 3h·litterbox 72h 만료 대비)
 
 // ── 사이트별 설정 (Discord Art Assets 키는 Dev Portal에 업로드 필요) ──
@@ -82,9 +90,10 @@ function clamp(str, max = 128) {
 }
 
 // 디스코드의 이미지 프록시가 인증 없이 직접 불러올 수 있는 호스트.
-//  여기 없는 http 이미지는 확장이 바이트를 뽑아 앱이 재호스팅하는 경로를 탄다.
-//  ※ 이 목록은 content.js 의 needsRehost() 와 같은 뜻이어야 한다. 한쪽만 고치면
-//    "바이트는 보내는데 쓰지 않는다" 또는 그 반대가 되어 로고만 뜬다.
+//  ⚠ "재호스팅을 건너뛴다"는 뜻이 아니다(2026-08-14 변경). 이제 모든 썸네일은
+//    확장에서 정사각으로 다듬어 재호스팅한다 — 디스코드가 large_image 를 정사각으로
+//    잘라 그려서, 16:9 원본을 그대로 주면 좌우가 잘리기 때문이다.
+//    이 목록은 "정사각본이 올라오기 전까지 원본이라도 띄워둘 수 있는가"에만 쓴다.
 const DIRECT_IMAGE_HOSTS = [
     /\.cloudfront\.net\//i,                  // TTFC 에피소드 썸네일
     /\bdisney\.images\.edge\.bamgrid\.com\//i, // 디즈니+ 아트워크 (쿠키 없이 200 확인)
@@ -117,11 +126,11 @@ function isHttpUrl(u) {
 const UPLOAD_HOSTS = [
     {
         name: 'litterbox',   // catbox 임시 저장소 (72시간)
-        async up(buf, type) {
+        async up(buf, type, name) {
             const fd = new FormData();
             fd.append('reqtype', 'fileupload');
             fd.append('time', '72h');
-            fd.append('fileToUpload', new Blob([buf], { type }), 'thumb.jpg');
+            fd.append('fileToUpload', new Blob([buf], { type }), name);
             const r = await fetch('https://litterbox.catbox.moe/resources/internals/api.php',
                 { method: 'POST', body: fd, headers: { 'User-Agent': 'curl/8.4.0' } });
             const t = (await r.text()).trim();
@@ -131,9 +140,9 @@ const UPLOAD_HOSTS = [
     },
     {
         name: 'uguu',        // 3시간 보관
-        async up(buf, type) {
+        async up(buf, type, name) {
             const fd = new FormData();
-            fd.append('files[]', new Blob([buf], { type }), 'thumb.jpg');
+            fd.append('files[]', new Blob([buf], { type }), name);
             const r = await fetch('https://uguu.se/upload?output=text',
                 { method: 'POST', body: fd, headers: { 'User-Agent': 'curl/8.4.0' } });
             const t = (await r.text()).trim();
@@ -143,10 +152,10 @@ const UPLOAD_HOSTS = [
     },
     {
         name: 'catbox',      // 영구 — 서비스 복구되면 자동으로 다시 쓰임
-        async up(buf, type) {
+        async up(buf, type, name) {
             const fd = new FormData();
             fd.append('reqtype', 'fileupload');
-            fd.append('fileToUpload', new Blob([buf], { type }), 'thumb.jpg');
+            fd.append('fileToUpload', new Blob([buf], { type }), name);
             const r = await fetch('https://catbox.moe/user/api.php',
                 { method: 'POST', body: fd, headers: { 'User-Agent': 'curl/8.4.0' } });
             const t = (await r.text()).trim();
@@ -161,12 +170,15 @@ async function uploadImage(dataUrl) {
     const m = /^data:([^;]+);base64,(.+)$/.exec(dataUrl || '');
     if (!m) throw new Error('잘못된 dataURL');
     const buf = Buffer.from(m[2], 'base64');
+    // 확장자를 실제 형식에 맞춘다 — 정사각 패딩본은 투명이 필요해 PNG 로 온다
+    const ext = /png/i.test(m[1]) ? 'png' : /webp/i.test(m[1]) ? 'webp' : 'jpg';
+    const fileName = 'thumb.' + ext;
     const order = [_preferredHost, ...UPLOAD_HOSTS.keys()].filter((v, i, a) => a.indexOf(v) === i);
     const errs = [];
     for (const i of order) {
         const host = UPLOAD_HOSTS[i];
         try {
-            const url = await host.up(buf, m[1]);
+            const url = await host.up(buf, m[1], fileName);
             _preferredHost = i;
             log.info(`[RPC] 업로드 성공 (${host.name})`);
             return url;
@@ -259,18 +271,22 @@ class DiscordRichPresence {
     }
 
     // 이미지 URL → 디스코드가 실제로 그릴 수 있는 URL로 해석
-    //  1) 재호스팅 캐시(catbox)에 있으면 그것
-    //  2) *.cloudfront.net(TTFC)은 디스코드 프록시가 직접 로드 가능(실증) → 원본 그대로
+    //  1) 재호스팅 캐시(catbox)에 있으면 언제나 그것 — 확장이 정사각으로 만든 판본이다
+    //  2) 아직 없으면, 디스코드가 직접 불러올 수 있는 호스트는 원본이라도 즉시 띄운다
+    //     (*.cloudfront.net·bamgrid — 정사각이 아니라 좌우가 잘려 보인다. 임시 표시용)
     //  3) 그 외(imagination CDN·TTFC 메인 도메인 등 외부 차단 호스트)는 로고 폴백
     //     — 재호스팅이 끝나면 cacheThumbnail()이 즉시 갱신해준다
+    //
+    //  ⚠ 1)과 2)의 순서가 중요하다. 예전엔 2)가 먼저라 cloudfront 원본이 항상 이겼고,
+    //    디스코드가 정사각으로 잘라 그려서 16:9 썸네일의 좌우 43%가 날아갔다.
     _resolveImage(url, logo) {
         if (!url) return logo;
         // http가 아니면 Dev Portal 에셋 키로 간주하고 그대로 사용
         // (시리즈 카테고리 로고 등 — 사이트 배너 URL은 외부 접근이 막혀 있음)
         if (!isHttpUrl(url)) return url;
-        if (canDiscordLoad(url)) return url;   // 재호스팅 없이 그대로 넘긴다
         const cached = this._cachedThumb(url);
         if (cached) return cached;
+        if (canDiscordLoad(url)) return url;   // 정사각본이 준비될 때까지의 임시 표시
         return logo;
     }
 
@@ -393,6 +409,7 @@ class DiscordRichPresence {
 
     updateFromVideoState(data) {
         if (!data) return;
+        this._lastInputAt = Date.now();   // 확장이 실제로 보내온 시각 (자체 갱신과 구분)
 
         const settings = data._settings;
         delete data._settings;
@@ -444,6 +461,7 @@ class DiscordRichPresence {
 
     updateFromNavigation(data) {
         if (!data) return;
+        this._lastInputAt = Date.now();   // 확장이 실제로 보내온 시각 (자체 갱신과 구분)
 
         const settings = data._settings;
         this.currentState.site = data.site || this.currentState.site || 'ttfc';
@@ -482,53 +500,55 @@ class DiscordRichPresence {
     //  Queue System
     // ══════════════════════════════════════
 
-    _queueUpdate(type) {
+    // ── 토큰 버킷 ──
+    //  _refill 은 흐른 시간만큼 토큰을 채운다. 가득 차면 기준 시각을 현재로 당겨
+    //  오래 안 쓴 시간이 무한히 쌓이지 않게 한다.
+    _refill() {
         const now = Date.now();
-        const elapsed = now - this._lastApiCall;
-
-        if (elapsed >= MIN_UPDATE_INTERVAL) {
-            this._flushUpdate(type);
-            return;
+        if (this._tokens == null) { this._tokens = RPC_BURST; this._tokenAt = now; }
+        const gained = Math.floor((now - this._tokenAt) / RPC_REFILL_MS);
+        if (gained > 0) {
+            this._tokens = Math.min(RPC_BURST, this._tokens + gained);
+            this._tokenAt += gained * RPC_REFILL_MS;
         }
-
-        this._pendingUpdate = type;
-
-        if (!this._pendingTimer) {
-            const waitTime = MIN_UPDATE_INTERVAL - elapsed + 100;
-            this._pendingTimer = setTimeout(() => {
-                this._pendingTimer = null;
-                if (this._pendingUpdate) {
-                    const t = this._pendingUpdate;
-                    this._pendingUpdate = null;
-                    this._flushUpdate(t);
-                }
-            }, waitTime);
-        }
+        if (this._tokens >= RPC_BURST) { this._tokens = RPC_BURST; this._tokenAt = now; }
     }
 
-    _forceUpdate(type) {
-        if (this._pendingTimer) {
-            clearTimeout(this._pendingTimer);
-            this._pendingTimer = null;
-        }
+    // 지금 보내도 되면 0, 아니면 기다려야 하는 ms
+    _msUntilSlot() {
+        this._refill();
+        if (this._tokens > 0) return 0;
+        return Math.max(0, RPC_REFILL_MS - (Date.now() - this._tokenAt));
+    }
+
+    _spendSlot() {
+        this._refill();
+        if (this._tokens > 0) this._tokens--;
+    }
+
+    // 실제 전송 예약 — 토큰이 있으면 대기 없이 그 자리에서 보낸다.
+    //  뒤늦게 보낼 때도 "마지막 상태 하나"만 보낸다(중간 상태는 어차피 낡았다).
+    _schedule(type) {
+        if (this._pendingTimer) { clearTimeout(this._pendingTimer); this._pendingTimer = null; }
         this._pendingUpdate = null;
 
-        // 연타 보호: 직전 API 호출 후 500ms 미만이면 그 차이만큼만 대기
-        // (일반 큐의 2초 대신 0.5초 — "즉시"에 가깝게, rate limit은 안 넘게)
-        const elapsed = Date.now() - this._lastApiCall;
-        const MIN_FORCE_GAP = 500;
-        if (elapsed >= MIN_FORCE_GAP) {
-            this._flushUpdate(type);
-        } else {
-            this._pendingUpdate = type;
-            this._pendingTimer = setTimeout(() => {
-                this._pendingTimer = null;
-                const t = this._pendingUpdate;
-                this._pendingUpdate = null;
-                if (t) this._flushUpdate(t);
-            }, MIN_FORCE_GAP - elapsed);
-        }
+        const wait = this._msUntilSlot();
+        if (wait <= 0) { this._flushUpdate(type); return; }   // ← 평소 경로: 0ms
+
+        this._pendingUpdate = type;
+        this._pendingTimer = setTimeout(() => {
+            this._pendingTimer = null;
+            const t = this._pendingUpdate;
+            this._pendingUpdate = null;
+            if (t) this._flushUpdate(t);
+        }, wait + 20);
     }
+
+    // 호출부 이름은 그대로 둔다 — 둘 다 같은 버킷을 쓰므로 이제 우선순위 차이가 없다.
+    // (예전엔 1000ms / 500ms 로 갈렸다. 지금은 둘 다 토큰이 있으면 즉시다)
+    _queueUpdate(type) { this._schedule(type); }
+
+    _forceUpdate(type) { this._schedule(type); }
 
     _flushUpdate(type) {
         if (type === 'watching') {
@@ -542,6 +562,15 @@ class DiscordRichPresence {
     _startRefreshTimer() {
         this._stopRefreshTimer();
         this._refreshTimer = setInterval(() => {
+            // ⚠ 2026-08-14: 확장이 이 사이트 소식을 끊었으면 되살리지 말고 거둔다.
+            //   이게 없으면 30초 갱신이 스스로 _resetIdleTimer 를 다시 감아
+            //   5분 유휴 해제가 영원히 발화하지 않는다(실측 확인 — 안전망이 스스로를 무력화).
+            //   그 결과 닫힌 탭의 마지막 화면이 프로필에 무한히 남았다.
+            if (Date.now() - (this._lastInputAt || 0) > this._IDLE_TIMEOUT) {
+                log.info('[RPC] 확장 소식 5분 끊김 → Activity 제거');
+                this.clearActivity();
+                return;
+            }
             if (this.currentState.isWatching && this.currentState.isPlaying) {
                 this._queueUpdate('watching');
             }
@@ -689,6 +718,7 @@ class DiscordRichPresence {
         if (!this._ensureApp()) { this._afterSwitch = activity; return; }
         if (!this.connected || !this.client) return;
         this._lastApiCall = Date.now();
+        this._spendSlot();               // 토큰 1개 소모 (한도 초과 방지)
         this._resetIdleTimer();
         // 진단 로그는 큰 이미지가 바뀔 때만 (로그 파일 비대 방지)
         const imgKey = String(activity.largeImageKey || '');
@@ -723,7 +753,9 @@ class DiscordRichPresence {
     }
 
     clearActivity() {
-        if (!this.connected || !this.client) return;
+        // ⚠ 조기 반환을 여기 두면 안 된다. Discord 가 잠깐 끊긴 사이에 들어온 CLEAR 가
+        //   통째로 무시돼, 다시 붙는 순간 낡은 상태가 되살아난다.
+        //   → 내부 상태 정리는 무조건, Discord 호출만 연결돼 있을 때.
         this._stopRefreshTimer();
         if (this._idleTimer) { clearTimeout(this._idleTimer); this._idleTimer = null; }
         // 죽은 프레즌스 부활 방지: 대기 중인 큐 발화·비동기 재호스팅 완료가
@@ -731,7 +763,13 @@ class DiscordRichPresence {
         if (this._pendingTimer) { clearTimeout(this._pendingTimer); this._pendingTimer = null; }
         this._pendingUpdate = null;
         this.currentState.isWatching = false;
-        try { this.client.clearActivity(); } catch (e) {}
+        // _lastSent 도 비운다 — 안 그러면 지운 뒤 똑같은 상태가 다시 와도
+        // 변경 감지에서 "바뀐 게 없다"고 걸러져 프레즌스가 안 돌아온다
+        // (일시정지 중이면 currentTime 도 안 늘어 영영 복구되지 않았다)
+        this._lastSent = { episode: '', playing: null, currentTime: 0, duration: 0 };
+        if (this.connected && this.client) {
+            try { this.client.clearActivity(); } catch (e) {}
+        }
         this.lastActivity = null;
         this._lastBrowsingKey = '';
         this._notifyStatus();

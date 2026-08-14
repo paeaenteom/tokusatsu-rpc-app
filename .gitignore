@@ -15,3 +15,6 @@ secrets.json
 # OS
 .DS_Store
 Thumbs.db
+
+# 빌드에서 제외되는 죽은 코드 (package.json build.files 의 !src/_unused/**)
+ttfc-app/src/_unused/
