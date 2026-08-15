@@ -54,16 +54,47 @@ $refs = @(
     'System.IO.Compression.dll', 'System.IO.Compression.FileSystem.dll'
 ) | ForEach-Object { "/r:$_" }
 
+# ── 버전 정보 리소스 ──
+#  이게 없으면 exe 의 속성이 전부 백지로 나간다 (ProductName '' / FileVersion 0.0.0.0).
+#  서명이 없는 상태에서 메타데이터까지 비어 있으면 Windows Defender 의 머신러닝 판정이
+#  이를 "정체를 숨긴 자체 추출 프로그램"으로 보고 Trojan:Win32/Sabsik.EN.B!ml 로 잡는다
+#  (2026-08-15 실제 발생 — 다운로드가 자동 삭제됨).
+#  누가 만든 무엇인지 정확히 밝히는 것이 정상적인 배포 관행이자 오탐을 줄이는 방법이다.
+$numVer = ($ver -replace '[^0-9.].*$', '')          # '0.2.6-beta' → '0.2.6'
+while (($numVer -split '\.').Count -lt 4) { $numVer += '.0' }
+$asmInfo = Join-Path $env:TEMP 'toku-rpc-installer-asm.cs'
+@"
+using System.Reflection;
+[assembly: AssemblyTitle("TOKU RPC 설치 프로그램")]
+[assembly: AssemblyDescription("TOKU RPC - 특촬 스트리밍 시청 정보를 Discord 에 표시하는 도구의 설치 프로그램")]
+[assembly: AssemblyProduct("TOKU RPC")]
+[assembly: AssemblyCompany("paeaenteom")]
+[assembly: AssemblyCopyright("MIT License - https://github.com/paeaenteom/tokusatsu-rpc-app")]
+[assembly: AssemblyVersion("$numVer")]
+[assembly: AssemblyFileVersion("$numVer")]
+[assembly: AssemblyInformationalVersion("$ver")]
+"@ | Set-Content -LiteralPath $asmInfo -Encoding UTF8
+
 $cscArgs = @('/target:winexe', "/out:$EXE", '/optimize+', '/nologo') + $refs
 if (Test-Path $ICO) { $cscArgs += "/win32icon:$ICO" }
 if ($embed) { $cscArgs += "/resource:$embed,app.zip" }   # 리소스 이름 = app.zip
 $cscArgs += $SRC
+$cscArgs += $asmInfo
 
 Write-Host "컴파일 중..." -ForegroundColor Cyan
 & $csc $cscArgs
 if ($LASTEXITCODE -ne 0) { throw "컴파일 실패 (코드 $LASTEXITCODE)" }
 if ($embed) { Remove-Item $embed -Force -ErrorAction SilentlyContinue }
+Remove-Item $asmInfo -Force -ErrorAction SilentlyContinue
 
 $f = Get-Item $EXE
 Write-Host "OK  $($f.Name)  $([math]::Round($f.Length/1MB,1)) MB" -ForegroundColor Green
 Write-Host "    $EXE" -ForegroundColor DarkGray
+
+# 버전 정보가 실제로 박혔는지 확인 — 비어 있으면 백신 오탐의 큰 원인이 된다
+$vi = $f.VersionInfo
+if ([string]::IsNullOrWhiteSpace($vi.ProductName) -or $vi.FileVersion -eq '0.0.0.0') {
+    Write-Host "  ★ 버전 정보가 비었습니다 — 백신 오탐 위험" -ForegroundColor Red
+} else {
+    Write-Host "    버전 정보: $($vi.ProductName) / $($vi.CompanyName) / $($vi.FileVersion)" -ForegroundColor DarkGray
+}

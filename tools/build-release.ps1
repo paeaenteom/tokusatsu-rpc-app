@@ -77,6 +77,16 @@ Compress-Archive -Path "$stage\*" -DestinationPath (Join-Path $OUT 'toku-rpc-ext
 Write-Host "  OK toku-rpc-extension.zip" -ForegroundColor Green
 Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
 
+# ── 3-2. 앱 무설치 ZIP ──────────────────────────────
+#  서명 없는 설치 프로그램은 Windows Defender 의 머신러닝 판정에 걸려 다운로드가
+#  통째로 삭제되는 일이 있다 (2026-08-15: Trojan:Win32/Sabsik.EN.B!ml — 오탐).
+#  ZIP 은 실행 파일이 아니라 그 판정을 타지 않으므로, 막혔을 때 쓸 길을 같이 낸다.
+#  압축을 풀고 'TOKU RPC.exe' 를 실행하면 된다. 확장은 위 zip 으로 수동 등록.
+$portable = Join-Path $OUT ("TOKU-RPC-$appVer-portable.zip")
+Remove-Item $portable -Force -ErrorAction SilentlyContinue
+Compress-Archive -Path (Join-Path $unpacked '*') -DestinationPath $portable -CompressionLevel Optimal -Force
+Write-Host ("  OK TOKU-RPC-$appVer-portable.zip  {0:N1} MB" -f ((Get-Item $portable).Length/1MB)) -ForegroundColor Green
+
 # ── 4. update.xml ───────────────────────────────────
 Step "업데이트 매니페스트"
 $crxUrl = "https://github.com/$REPO/releases/latest/download/toku-rpc-extension.crx"

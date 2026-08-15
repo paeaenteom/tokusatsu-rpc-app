@@ -9,7 +9,7 @@ Supported sites
 - TSUBURAYA IMAGINATION — `imagination.m-78.jp`
 - Disney+ — `www.disneyplus.com` *(experimental)*
 
-> **beta 0.2.6** — This is something I made for myself. There may be bugs.
+> **beta 0.2.7** — This is something I made for myself. There may be bugs.
 
 ---
 
@@ -157,6 +157,26 @@ Just attach those files to a release as-is.
 
 ---
 
+
+## If your antivirus says "virus detected"
+
+**It's a false positive**, common for installers from individual developers without a
+code signing certificate.
+
+Windows Defender names it `Trojan:Win32/Sabsik.EN.B!ml`. The **`!ml` suffix means
+"machine learning guessed this"** — it did not match known malware. The combination of
+*unsigned + self-extracting + writes to the registry + requests admin* just looks
+statistically suspicious, and those are all things an installer does by definition.
+
+**If you'd rather not trust it, don't.** How to check or work around it:
+
+- **Even the installer's own code is public** — [`tools/installer/Installer.cs`](tools/installer/Installer.cs)
+- **Use the archive** — `TOKU-RPC-<version>-portable.zip` on the releases page isn't an
+  executable, so it doesn't get this verdict. Unzip and run `TOKU RPC.exe`
+  (add the extension manually from `toku-rpc-extension.zip`)
+- **[Report the false positive to Microsoft](https://www.microsoft.com/en-us/wdsi/filesubmission)** — usually cleared within days
+
+A signing certificate would fix it properly; this is a personal project and doesn't have one.
 ## Things to know
 
 - Windows only (Electron can target macOS too, but I've never tested a macOS build)

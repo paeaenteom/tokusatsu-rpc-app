@@ -9,7 +9,7 @@
 - TSUBURAYA IMAGINATION — `imagination.m-78.jp`
 - Disney+ — `www.disneyplus.com` *(実験)*
 
-> **beta 0.2.6** — 個人用に作ったツールです。バグがあるかもしれません。
+> **beta 0.2.7** — 個人用に作ったツールです。バグがあるかもしれません。
 
 ---
 
@@ -156,6 +156,24 @@ powershell -File tools\build-release.ps1
 
 ---
 
+
+## ウイルス対策ソフトが「ウイルスが検出されました」と言うとき
+
+**誤検知です。** コード署名証明書を持たない個人開発者のインストーラーではよくあります。
+
+Windows Defender が付ける名前は `Trojan:Win32/Sabsik.EN.B!ml` で、末尾の **`!ml` は
+「機械学習による推測」**という印です。既知のマルウェアと一致したのではなく、
+*署名が無い・自己解凍する・レジストリを書き換える・管理者権限を求める*という組み合わせが
+統計的に怪しく見えるという判定にすぎません。インストーラーなら当然行うことです。
+
+**信用できなければ入れないでください。** 確認・回避の方法:
+
+- **インストーラー自体のコードも公開しています** — [`tools/installer/Installer.cs`](tools/installer/Installer.cs)
+- **圧縮版を使う** — リリースの `TOKU-RPC-<バージョン>-portable.zip` は実行ファイルではないため
+  この判定を受けません。展開して `TOKU RPC.exe` を実行 (拡張機能は `toku-rpc-extension.zip` から手動登録)
+- **[Microsoft に誤検知を報告](https://www.microsoft.com/en-us/wdsi/filesubmission)** — 通常は数日で解除されます
+
+署名証明書があれば根本解決しますが、個人プロジェクトのためまだ用意できていません。
 ## 注意点
 
 - Windows 専用です (Electron の仕組み上 macOS 版もビルドできますが、動作確認はしていません)

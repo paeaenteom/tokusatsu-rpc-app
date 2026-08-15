@@ -80,4 +80,27 @@ exports.default = async function afterPack(context) {
 
   const okEmbed = iconEmbedded(exePath, icoPath);
   console.log('  [icon] ' + (okEmbed === false ? '★ 넣었는데 확인 실패' : 'exe 아이콘 적용 완료'));
+
+  // ── 버전 정보 ──
+  //  electron-builder 가 이걸 못 박아서 앱 exe 가 Electron 기본값을 그대로 들고 있었다
+  //  (ProductName "Electron" / CompanyName "GitHub, Inc.").
+  //  자기 정체를 안 밝히는 실행 파일은 백신 머신러닝 판정에 불리하고, 애초에 사실도 아니다.
+  const pkg = require(path.join(projectDir, 'package.json'));
+  const numVer = (String(pkg.version).match(/^\d+(\.\d+){0,3}/) || ['0.0.0'])[0]
+    .split('.').concat(['0', '0', '0']).slice(0, 4).join('.');
+  const strings = [
+    'ProductName', 'TOKU RPC',
+    'FileDescription', 'TOKU RPC',
+    'CompanyName', 'paeaenteom',
+    'LegalCopyright', 'MIT License - https://github.com/paeaenteom/tokusatsu-rpc-app',
+    'OriginalFilename', exeName,
+  ];
+  try {
+    const args = [exePath, '--set-file-version', numVer, '--set-product-version', numVer];
+    for (let i = 0; i < strings.length; i += 2) args.push('--set-version-string', strings[i], strings[i + 1]);
+    execFileSync(rc, args, { stdio: 'pipe' });
+    console.log('  [icon] 버전 정보 적용: TOKU RPC ' + numVer);
+  } catch (e) {
+    console.log('  [icon] 버전 정보 적용 실패: ' + e.message);
+  }
 };

@@ -6,6 +6,24 @@ What changed in each version. Newest first.
 
 ---
 
+## 0.2.7 beta — 2026-08-15
+
+### Antivirus false positive
+- Windows Defender flagged the installer as `Trojan:Win32/Sabsik.EN.B!ml` and
+  **deleted the download automatically**. It's a false positive — the `!ml` suffix
+  means a machine-learning guess, not a match against known malware
+- **The executables now say who they are.** The installer had completely blank
+  metadata (version 0.0.0.0, no product or company), and the app itself still
+  claimed to be "GitHub, Inc." from Electron's defaults. Unsigned *and* anonymous
+  is a bad combination for these classifiers
+- **A no-install archive ships alongside it** — `TOKU-RPC-<version>-portable.zip`.
+  It isn't an executable, so it doesn't get this verdict. Unzip and run `TOKU RPC.exe`
+- The README and release notes now explain why this happens and how to report it
+
+> The real fix is a code signing certificate. This is a personal project and doesn't have one.
+
+---
+
 ## 0.2.6 beta — 2026-08-15
 
 ### Fixed

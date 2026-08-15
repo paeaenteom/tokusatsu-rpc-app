@@ -9,7 +9,7 @@
 - TSUBURAYA IMAGINATION — `imagination.m-78.jp`
 - Disney+ — `www.disneyplus.com` *(실험)*
 
-> **beta 0.2.6** — 개인용으로 만든 도구입니다. 버그가 있을 수 있어요.
+> **beta 0.2.7** — 개인용으로 만든 도구입니다. 버그가 있을 수 있어요.
 
 ---
 
@@ -156,6 +156,24 @@ powershell -File tools\build-release.ps1
 
 ---
 
+
+## 백신이 "바이러스가 발견됨" 이라고 할 때
+
+**오탐입니다.** 코드 서명 인증서가 없는 개인 개발자의 설치 프로그램에서 흔히 일어납니다.
+
+Windows Defender 가 붙이는 이름은 `Trojan:Win32/Sabsik.EN.B!ml` 이고, 끝의 **`!ml` 은
+"머신러닝이 추측했다"** 는 표시입니다. 알려진 악성코드와 일치한 게 아니라,
+*서명 없음 · 자체 압축 해제 · 레지스트리 수정 · 관리자 권한 요청* 조합이 통계적으로
+수상해 보인다는 뜻입니다. 설치 프로그램이면 원래 다 하는 일입니다.
+
+**의심스러우면 받지 않으셔도 됩니다.** 확인하거나 우회하는 방법:
+
+- **설치 프로그램 코드까지 전부 공개돼 있습니다** — [`tools/installer/Installer.cs`](tools/installer/Installer.cs)
+- **압축본을 쓰세요** — 릴리스의 `TOKU-RPC-<버전>-portable.zip` 은 실행 파일이 아니라 이 판정을
+  타지 않습니다. 풀고 `TOKU RPC.exe` 실행 (확장은 `toku-rpc-extension.zip` 으로 수동 등록)
+- **[Microsoft 에 오탐 신고](https://www.microsoft.com/en-us/wdsi/filesubmission)** — 보통 며칠 안에 풀립니다
+
+서명 인증서를 사면 근본적으로 해결되지만, 개인 프로젝트라 아직 없습니다.
 ## 알아둘 점
 
 - Windows 전용입니다 (Electron 기준으로는 macOS 빌드도 가능하지만 검증하지 않았습니다)

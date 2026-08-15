@@ -1,8 +1,8 @@
-Fixed a video staying on your profile after going back, and the missing app icon.
+Addressed the antivirus false positive that was deleting the download, and added a no-install archive.
 
 ## Install
 
-Just grab **`TOKU-RPC-Setup-0.2.6-beta.exe`** below and run it — that one file is all you need.
+Just grab **`TOKU-RPC-Setup-0.2.7-beta.exe`** below and run it — that one file is all you need.
 The app and the browser extension are installed in one go. There's nothing else to download.
 
 - In the installer window, just **check off the browsers you want the extension in**
@@ -11,6 +11,22 @@ The app and the browser extension are installed in one go. There's nothing else 
   (That's because Windows only lets admins write to the extension policy key. The app itself installs to your own user folder)
 - After installing, **quit your browser completely and start it again**
   (Make sure it's not still running in the system tray, or the extension won't take effect)
+
+## What's new in 0.2.7
+
+### Antivirus false positive
+- Windows Defender flagged the installer as `Trojan:Win32/Sabsik.EN.B!ml` and
+  **deleted the download automatically**. It's a false positive — the `!ml` suffix
+  means a machine-learning guess, not a match against known malware
+- **The executables now say who they are.** The installer had completely blank
+  metadata (version 0.0.0.0, no product or company), and the app itself still
+  claimed to be "GitHub, Inc." from Electron's defaults. Unsigned *and* anonymous
+  is a bad combination for these classifiers
+- **A no-install archive ships alongside it** — `TOKU-RPC-<version>-portable.zip`.
+  It isn't an executable, so it doesn't get this verdict. Unzip and run `TOKU RPC.exe`
+- The README and release notes now explain why this happens and how to report it
+
+> The real fix is a code signing certificate. This is a personal project and doesn't have one.
 
 ## What's new in 0.2.6
 
@@ -157,10 +173,33 @@ Per-version history is in the [CHANGELOG](https://github.com/paeaenteom/tokusats
 
 | File | What it is |
 |---|---|
-| `TOKU-RPC-Setup-0.2.6-beta.exe` | **This is the only one you need** (app bundled inside) |
+| `TOKU-RPC-Setup-0.2.7-beta.exe` | **This is the only one you need** (app bundled inside) |
 | `toku-rpc-extension.crx`, `update.xml` | For automatic extension installation and updates — the browser fetches these on its own |
 | `toku-rpc-extension.zip` | For installing the extension manually (only if the automatic install is blocked) |
+| `TOKU-RPC-<version>-portable.zip` | No-install archive (use if antivirus blocks the exe above) |
 
+
+## If your antivirus says "virus detected"
+
+**It's a false positive.** This is common for installers from individual developers who
+haven't bought a code signing certificate.
+
+Windows Defender calls it `Trojan:Win32/Sabsik.EN.B!ml`, and the **`!ml` suffix means
+"machine learning guessed this"** — not that it matched known malware. The combination of
+*unsigned + self-extracting + touches the registry + asks for admin* looks statistically
+suspicious. Those are all things an installer does by definition.
+
+**If you'd rather not trust it, don't.** Here's how to check or work around it:
+
+- **All the source is public** — the [repository](https://github.com/paeaenteom/tokusatsu-rpc-app)
+  includes the installer's own code (`tools/installer/Installer.cs`)
+- **Grab the archive instead** — `TOKU-RPC-<version>-portable.zip` isn't an executable, so it
+  doesn't get this verdict. Unzip it and run `TOKU RPC.exe`
+  (add the extension manually from `toku-rpc-extension.zip`)
+- **Report the false positive to Microsoft** — [submit it here](https://www.microsoft.com/en-us/wdsi/filesubmission);
+  it usually clears within a few days
+
+A signing certificate would fix this properly. This is a personal project and doesn't have one yet.
 ## Things to know
 
 - Windows only
