@@ -184,6 +184,30 @@ A signing certificate would fix it properly; this is a personal project and does
   The app uploads them to a temporary host and shows them from there (litterbox first, then uguu)
 - This tool only displays watch info — it doesn't download video or circumvent any copy protection
 
+
+### If Smart App Control blocks it
+
+This is a **different problem** from the antivirus false positive above, and there is
+currently no way around it.
+
+Smart App Control (Windows 11 only) blocks unsigned executables **unconditionally**.
+Reputation doesn't help, and neither does file metadata. It only allows programs signed
+with a code signing certificate from a CA in the Microsoft Trusted Root Program.
+
+This program has no such certificate. They aren't cheap for an individual (from roughly
+US$200/year), and Microsoft's affordable alternative, Azure Artifact Signing, currently
+**restricts individual developer sign-up to residents of the US and Canada**.
+
+So there are only two options:
+
+- **Don't install it** — the safest choice, and a perfectly reasonable one
+- **Turn Smart App Control off** — *Windows Security → App & browser control → Smart App Control*
+  ⚠ **Once off, it cannot be turned back on without reinstalling Windows.** That means
+  permanently lowering a system-wide protection for the sake of one program. Please weigh
+  whether that's worth it. [All the source is public](https://github.com/paeaenteom/tokusatsu-rpc-app)
+  if you'd rather read it and judge for yourself.
+
+The moment a certificate is in place, signed builds will ship.
 ## Changelog
 
 What changed in each version is in [CHANGELOG.en.md](CHANGELOG.en.md).

@@ -51,6 +51,10 @@ Write-Host "  OK win-unpacked" -ForegroundColor Green
 # 그대로 두면 작업표시줄에 Electron 기본 아이콘이 뜬다.
 & (Join-Path $PSScriptRoot 'set-exe-icon.ps1')
 
+# 코드 서명 — Windows 11 Smart App Control 은 서명 없는 exe 를 무조건 차단한다.
+#  인증서가 설정돼 있지 않으면 아무 일도 하지 않고 넘어간다 (tools\sign.ps1 주석 참고).
+& (Join-Path $PSScriptRoot 'sign.ps1') -Path (Join-Path $unpacked 'TOKU RPC.exe') -Description 'TOKU RPC'
+
 # ── 2. 확장 CRX (서명) ──────────────────────────────
 Step "확장 패킹"
 $chrome = @(
@@ -105,6 +109,7 @@ Write-Host "  OK update.xml (확장 v$extVer)" -ForegroundColor Green
 # ── 5. 설치 프로그램 (앱 내장) ──────────────────────
 Step "설치 프로그램 빌드"
 & (Join-Path $PSScriptRoot 'build-installer.ps1')
+& (Join-Path $PSScriptRoot 'sign.ps1') -Path (Join-Path $OUT "TOKU-RPC-Setup-$appVer.exe") -Description 'TOKU RPC 설치 프로그램'
 
 # 릴리스 본문 (dist-release 는 매번 비우므로 tools 에 원본을 둔다)
 # release-body.md 가 실제로 릴리스 설명란에 붙여넣을 파일이다.
