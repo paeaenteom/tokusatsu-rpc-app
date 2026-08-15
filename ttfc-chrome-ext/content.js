@@ -665,15 +665,23 @@
   //  ⚠ site 를 반드시 실어 보낸다. 안 보내면 워커가 siteOfTab 으로 복원하는데,
   //    탭 상태가 이미 지워진 뒤면 빈 문자열이 되고 앱에서 "사이트 지정 없음"
   //    = 모든 사이트 지우기로 승격돼 보고 있던 다른 사이트까지 같이 꺼진다.
+  //  탭을 닫으면 visibilitychange(hidden) 와 pagehide 가 연달아 온다. 둘 다 그대로
+  //  보내면 앱이 같은 CLEAR 를 두 번 처리한다(로그에서 항상 2줄씩 찍혔다). 한 번만 보낸다.
+  let lastClearAt = 0;
+  function sendClear(why) {
+    const now = Date.now();
+    if (now - lastClearAt < 1000) return;   // 방금 보냈으면 생략
+    lastClearAt = now;
+    LOG(why + ' → CLEAR');
+    try { chrome.runtime.sendMessage({ action: 'CLEAR', site: SITE.id }).catch(() => {}); } catch (e) {}
+    lastStateStr = '';
+  }
+
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       const video = SITE.getVideoElement();
       const playing = video && !video.paused && !video.ended;
-      if (!playing) {
-        LOG('탭 숨김 → CLEAR');
-        chrome.runtime.sendMessage({ action: 'CLEAR', site: SITE.id }).catch(() => {});
-        lastStateStr = '';
-      }
+      if (!playing) sendClear('탭 숨김');
     } else {
       sendUpdate(true);
     }
@@ -685,9 +693,7 @@
   //  이때 알리지 않으면 그 사이트 상태가 앱에 얼어붙은 채 남는다(유령 프레즌스).
   //  워커의 onRemoved 가 주 경로이고 이건 보조 경로 — 전달이 보장되진 않지만
   //  타 사이트로 이동(탭은 살아 있어 onRemoved 가 안 도는 경우)은 이쪽만 잡을 수 있다.
-  window.addEventListener('pagehide', () => {
-    try { chrome.runtime.sendMessage({ action: 'CLEAR', site: SITE.id }).catch(() => {}); } catch (e) {}
-  });
+  window.addEventListener('pagehide', () => sendClear('문서 사라짐'));
 
   LOG(`Content script 로드됨 — site: ${SITE.id} (${SITE.siteName})`);
 })();

@@ -6,6 +6,26 @@ What changed in each version. Newest first.
 
 ---
 
+## 0.2.6 beta — 2026-08-15
+
+### Fixed
+- **Going back from a video left that video on your profile**
+  - If the page you returned to was the one you came from, it decided "nothing
+    changed" and skipped the update — even though a video card was on screen
+  - Measured: it stayed for **44 seconds** after going back, and only cleared
+    when the tab was switched
+- **The app had no icon** — depending on how it was built, the step that embeds
+  the icon was skipped entirely. It is now always applied
+- Closing a tab sent the same signal twice; now once
+
+### Fewer uploads
+- **Restarting the app no longer re-uploads images it already uploaded**
+  - The cache used to start empty on every launch
+- Retention now matches the host (images kept for 72 hours were being discarded
+  after 2 and uploaded again)
+
+---
+
 ## 0.2.5 beta — 2026-08-15
 
 ### Memory

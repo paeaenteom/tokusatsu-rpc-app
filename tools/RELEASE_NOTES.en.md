@@ -1,8 +1,8 @@
-Tray memory is down from 315MB to 171MB, and images show up much faster.
+Fixed a video staying on your profile after going back, and the missing app icon.
 
 ## Install
 
-Just grab **`TOKU-RPC-Setup-0.2.5-beta.exe`** below and run it — that one file is all you need.
+Just grab **`TOKU-RPC-Setup-0.2.6-beta.exe`** below and run it — that one file is all you need.
 The app and the browser extension are installed in one go. There's nothing else to download.
 
 - In the installer window, just **check off the browsers you want the extension in**
@@ -11,6 +11,24 @@ The app and the browser extension are installed in one go. There's nothing else 
   (That's because Windows only lets admins write to the extension policy key. The app itself installs to your own user folder)
 - After installing, **quit your browser completely and start it again**
   (Make sure it's not still running in the system tray, or the extension won't take effect)
+
+## What's new in 0.2.6
+
+### Fixed
+- **Going back from a video left that video on your profile**
+  - If the page you returned to was the one you came from, it decided "nothing
+    changed" and skipped the update — even though a video card was on screen
+  - Measured: it stayed for **44 seconds** after going back, and only cleared
+    when the tab was switched
+- **The app had no icon** — depending on how it was built, the step that embeds
+  the icon was skipped entirely. It is now always applied
+- Closing a tab sent the same signal twice; now once
+
+### Fewer uploads
+- **Restarting the app no longer re-uploads images it already uploaded**
+  - The cache used to start empty on every launch
+- Retention now matches the host (images kept for 72 hours were being discarded
+  after 2 and uploaded again)
 
 ## What's new in 0.2.5
 
@@ -139,7 +157,7 @@ Per-version history is in the [CHANGELOG](https://github.com/paeaenteom/tokusats
 
 | File | What it is |
 |---|---|
-| `TOKU-RPC-Setup-0.2.5-beta.exe` | **This is the only one you need** (app bundled inside) |
+| `TOKU-RPC-Setup-0.2.6-beta.exe` | **This is the only one you need** (app bundled inside) |
 | `toku-rpc-extension.crx`, `update.xml` | For automatic extension installation and updates — the browser fetches these on its own |
 | `toku-rpc-extension.zip` | For installing the extension manually (only if the automatic install is blocked) |
 

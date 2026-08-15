@@ -118,6 +118,52 @@ function isHttpUrl(u) {
     return typeof u === 'string' && /^https?:\/\//i.test(u);
 }
 
+// ── 재호스팅 결과를 디스크에 남긴다 (2026-08-15) ──
+//  앱을 껐다 켤 때마다 캐시가 통째로 비어, 보던 이미지를 전부 다시 올리고 있었다.
+//  업로드 호스트마다 실제 보관 기간이 다르므로(litterbox 72h · uguu 3h · catbox 영구)
+//  항목마다 유효기간을 같이 적어 두고, 지난 것은 읽을 때 버린다.
+//  ※ Electron 밖(테스트)에서는 저장하지 않는다 — require('electron') 이 앱 API 를 주지 않는다.
+const HOSTED_CACHE_MAX = 300;
+function hostedCachePath() {
+    try {
+        const { app } = require('electron');
+        if (app && typeof app.getPath === 'function') {
+            return require('path').join(app.getPath('userData'), 'thumb-cache.json');
+        }
+    } catch (e) { /* Electron 아님 */ }
+    return '';
+}
+
+function loadHostedCache() {
+    const p = hostedCachePath();
+    const m = new Map();
+    if (!p) return m;
+    try {
+        const raw = JSON.parse(require('fs').readFileSync(p, 'utf8'));
+        const now = Date.now();
+        let dropped = 0;
+        for (const [url, e] of Object.entries(raw || {})) {
+            if (!e || !e.url || !e.at) continue;
+            if (now - e.at > (e.keepMs || THUMB_TTL)) { dropped++; continue; }
+            m.set(url, e);
+        }
+        log.info(`[RPC] 썸네일 캐시 복원: ${m.size}건 (만료 ${dropped}건 버림)`);
+    } catch (e) { /* 없거나 깨졌으면 빈 캐시로 시작 */ }
+    return m;
+}
+
+function saveHostedCache(map) {
+    const p = hostedCachePath();
+    if (!p) return;
+    try {
+        // 오래된 것부터 잘라 파일이 무한히 커지지 않게 (Map 은 삽입 순서 유지)
+        const entries = [...map.entries()].slice(-HOSTED_CACHE_MAX);
+        require('fs').writeFileSync(p, JSON.stringify(Object.fromEntries(entries)), 'utf8');
+    } catch (e) {
+        log.warn('[RPC] 썸네일 캐시 저장 실패:', e.message);
+    }
+}
+
 // dataURL(이미지) → 공개 이미지 호스트 업로드 → 디스코드가 렌더 가능한 URL 반환
 //  ※ Node 요청은 Origin 헤더가 없어야 통과한다(확장/브라우저 Origin은 412 거부).
 //  ※ 단일 호스트 의존은 위험 — 2026-07-26 catbox가 "Uploads paused"(412)로
@@ -126,6 +172,7 @@ function isHttpUrl(u) {
 const UPLOAD_HOSTS = [
     {
         name: 'litterbox',   // catbox 임시 저장소 (72시간)
+        keepMs: 60 * 60 * 60 * 1000,   // 72h 중 60h 만 믿는다 (여유)
         async up(buf, type, name) {
             const fd = new FormData();
             fd.append('reqtype', 'fileupload');
@@ -140,6 +187,7 @@ const UPLOAD_HOSTS = [
     },
     {
         name: 'uguu',        // 3시간 보관
+        keepMs: 2 * 60 * 60 * 1000,
         async up(buf, type, name) {
             const fd = new FormData();
             fd.append('files[]', new Blob([buf], { type }), name);
@@ -152,6 +200,7 @@ const UPLOAD_HOSTS = [
     },
     {
         name: 'catbox',      // 영구 — 서비스 복구되면 자동으로 다시 쓰임
+        keepMs: 30 * 24 * 60 * 60 * 1000,   // 영구지만 30일로 끊는다
         async up(buf, type, name) {
             const fd = new FormData();
             fd.append('reqtype', 'fileupload');
@@ -181,7 +230,7 @@ async function uploadImage(dataUrl) {
             const url = await host.up(buf, m[1], fileName);
             _preferredHost = i;
             log.info(`[RPC] 업로드 성공 (${host.name})`);
-            return url;
+            return { url, keepMs: host.keepMs || THUMB_TTL };
         } catch (e) {
             errs.push(`${host.name}: ${e.message}`);
         }
@@ -225,6 +274,7 @@ class DiscordRichPresence {
         this._browsingStart = 0;
         this._browsingUrl = '';
         this._lastBrowsingKey = '';
+        this._shownType = null;        // 지금 띄운 카드 종류: 'watching' | 'browsing' | null
 
         // Queue system
         this._lastApiCall = 0;
@@ -250,7 +300,7 @@ class DiscordRichPresence {
     _cachedThumb(url) {
         const hit = this._thumbCache.get(url);
         if (!hit) return '';
-        if (Date.now() - hit.at > THUMB_TTL) { this._thumbCache.delete(url); return ''; }
+        if (Date.now() - hit.at > (hit.keepMs || THUMB_TTL)) { this._thumbCache.delete(url); return ''; }
         return hit.url;
     }
 
@@ -276,12 +326,12 @@ class DiscordRichPresence {
 
     // 이미 올라간 재호스팅 URL 을 캐시에 꽂고, 지금 그걸 보여주는 중이면 즉시 갱신.
     //  업로드는 허브가 한 번만 하고(중복 제거), 결과만 각 클라이언트가 받아 간다.
-    adoptThumb(url, hosted) {
+    adoptThumb(url, hosted, keepMs) {
         if (!url || !hosted) return;
         if (this._thumbCache.size >= 60) {
             this._thumbCache.delete(this._thumbCache.keys().next().value);
         }
-        this._thumbCache.set(url, { url: hosted, at: Date.now() });
+        this._thumbCache.set(url, { url: hosted, at: Date.now(), keepMs: keepMs || THUMB_TTL });
         const s = this.currentState;
         if (this.lastActivity) {
             if (s.isWatching && s.thumbnail === url) this._forceUpdate('watching');
@@ -443,10 +493,19 @@ class DiscordRichPresence {
 
             // 내용이 같으면 재전송 생략 (10초 하트비트로 중복 수신되므로)
             // ※ 5분 유휴로 꺼진 뒤에도 하트비트로는 되살리지 않음 — 페이지 이동 시에만
+            //
+            // ⚠ 2026-08-15: "키가 같으면 건너뛴다"만으로는 부족하다. 지금 화면에 무엇이
+            //   떠 있는지도 봐야 한다. 예전엔 이랬다:
+            //     ① 작품 페이지 둘러봄 → 브라우징 카드 표시, 키 기억
+            //     ② 영상 재생 → 영상 카드로 바뀜 (키는 그대로 남아 있음)
+            //     ③ 뒤로 가기로 ①번 페이지 복귀 → 키가 같다고 갱신을 통째로 건너뜀
+            //     → 프로필에는 아까 보던 **영상 카드가 그대로** 남았다.
+            //       (실측: 뒤로 간 뒤 44초 동안 안 바뀌었고, 탭을 옮겨 CLEAR 가 나가서야 풀렸다)
+            //   그래서 "그 브라우징 카드를 지금 실제로 띄우고 있을 때"만 건너뛴다.
             const key = [this.currentState.site, this.currentState.pageTitle,
                          this.currentState.pageDetail, this.currentState.pageBanner,
                          this.currentState.pageUrl].join('|');
-            if (key === this._lastBrowsingKey) return;
+            if (key === this._lastBrowsingKey && this._shownType === 'browsing') return;
             this._lastBrowsingKey = key;
 
             // 페이지 이동은 즉시 반영 (_forceUpdate에 연타 가드 있음)
@@ -509,6 +568,10 @@ class DiscordRichPresence {
     _forceUpdate(type) { this._schedule(type); }
 
     _flushUpdate(type) {
+        // 지금 프로필에 어떤 종류의 카드를 띄웠는지 기억한다.
+        //  브라우징 중복 생략 판정이 이걸 본다 — 영상 카드를 띄운 채로는
+        //  "같은 브라우징 페이지"라도 반드시 다시 보내야 한다.
+        this._shownType = type === 'watching' ? 'watching' : 'browsing';
         if (type === 'watching') {
             this._buildAndSendWatching();
         } else {
@@ -705,6 +768,7 @@ class DiscordRichPresence {
             this._stopRefreshTimer();
             try { if (this.client) this.client.clearActivity(); } catch (e) {}
             this.lastActivity = null;
+            this._shownType = null;   // 내려갔으니 같은 페이지라도 다시 올릴 수 있어야 한다
             // _lastBrowsingKey는 유지 — 동일 페이지 하트비트로 되살아나지 않게
             this._notifyStatus();
         }, this._IDLE_TIMEOUT);
@@ -730,6 +794,7 @@ class DiscordRichPresence {
         }
         this.lastActivity = null;
         this._lastBrowsingKey = '';
+        this._shownType = null;
         this._notifyStatus();
     }
 }
@@ -756,6 +821,30 @@ class DiscordRpcHub {
         this._enabled = true;
         this._uploading = new Set();  // 업로드 진행 중인 원본 URL (중복 업로드 차단)
         this._bytes = new Map();      // 원본 URL → 이미지 바이트 (허브에 한 벌만)
+        // 재호스팅 결과: 원본 URL → { url, at, keepMs }. 디스크에 남겨 재시작을 견딘다.
+        this._hosted = loadHostedCache();
+        this._saveTimer = null;
+    }
+
+    // 디스크 저장은 몰아서 (업로드가 연달아 끝날 때 파일을 계속 쓰지 않게)
+    _saveHosted() {
+        if (this._saveTimer) return;
+        this._saveTimer = setTimeout(() => {
+            this._saveTimer = null;
+            saveHostedCache(this._hosted);
+        }, 2000);
+        if (this._saveTimer.unref) this._saveTimer.unref();
+    }
+
+    // 새로 만든 클라이언트에 이미 아는 재호스팅 결과를 심어 준다.
+    //  이게 없으면 사이트 클라이언트가 생길 때마다 캐시가 빈 채로 시작해
+    //  같은 이미지를 또 올리게 된다.
+    _seedHosted(client) {
+        const now = Date.now();
+        for (const [url, e] of this._hosted) {
+            if (now - e.at > (e.keepMs || THUMB_TTL)) continue;
+            client._thumbCache.set(url, { url: e.url, at: e.at, keepMs: e.keepMs });
+        }
     }
 
     // 그 사이트 전용 클라이언트를 (없으면 만들어) 돌려준다
@@ -764,6 +853,7 @@ class DiscordRpcHub {
         let c = this.clients.get(id);
         if (!c) {
             c = new DiscordRichPresence(appIdOf(id));
+            this._seedHosted(c);   // 이미 올려 둔 이미지는 다시 올리지 않게
             c.setLang(this.lang);
             c.onStatusChange = () => { if (this.onStatusChange) this.onStatusChange(); };
             this.clients.set(id, c);
@@ -811,9 +901,10 @@ class DiscordRpcHub {
         }
         this._uploading.add(url);   // 재시도 대기 중에도 유지 → 중복 업로드 방지
 
-        let hosted = '';
+        let hosted = '', keepMs = THUMB_TTL;
         try {
-            hosted = await uploadImage(dataUrl);
+            const r = await uploadImage(dataUrl);
+            hosted = r.url; keepMs = r.keepMs;
         } catch (e) {
             log.warn(`[RPC] 썸네일 재호스팅 실패(${attempt + 1}/4):`, e.message);
             if (attempt < 3) {
@@ -827,7 +918,12 @@ class DiscordRpcHub {
 
         this._uploading.delete(url);
         log.info('[RPC] 썸네일 재호스팅 OK →', hosted);
-        for (const c of this.clients.values()) c.adoptThumb(url, hosted);
+        // 디스크에도 남긴다 — 앱을 껐다 켜도 같은 이미지를 다시 올리지 않는다
+        // 상한까지 줄인다 (한 번에 하나만 지우면 이미 넘친 상태에서 영영 안 줄어든다)
+        while (this._hosted.size >= HOSTED_CACHE_MAX) this._hosted.delete(this._hosted.keys().next().value);
+        this._hosted.set(url, { url: hosted, at: Date.now(), keepMs });
+        this._saveHosted();
+        for (const c of this.clients.values()) c.adoptThumb(url, hosted, keepMs);
     }
     // 이미지 바이트는 허브에 딱 한 벌만 둔다.
     //  ⚠ 예전엔 클라이언트마다 각자 20장씩 들고 있었다. 사이트가 3개면 **같은 사진을
@@ -853,6 +949,11 @@ class DiscordRpcHub {
         return logo;
     }
     _cachedThumb(url) {
+        const e = this._hosted.get(url);
+        if (e) {
+            if (Date.now() - e.at <= (e.keepMs || THUMB_TTL)) return e.url;
+            this._hosted.delete(url);   // 만료 — 다음 번에 다시 올린다
+        }
         for (const c of this.clients.values()) { const r = c._cachedThumb(url); if (r) return r; }
         return '';
     }
