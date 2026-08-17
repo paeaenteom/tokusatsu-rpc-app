@@ -1,8 +1,8 @@
-Fixed the Discord connection dying over time, and the presence vanishing when another window came forward.
+Cleans up errors logged in 0.2.8. No functional change.
 
 ## Install
 
-Just grab **`TOKU-RPC-Setup-0.2.8-beta.exe`** below and run it — that one file is all you need.
+Just grab **`TOKU-RPC-Setup-0.2.9-beta.exe`** below and run it — that one file is all you need.
 The app and the browser extension are installed in one go. There's nothing else to download.
 
 - In the installer window, just **check off the browsers you want the extension in**
@@ -11,6 +11,14 @@ The app and the browser extension are installed in one go. There's nothing else 
   (That's because Windows only lets admins write to the extension policy key. The app itself installs to your own user folder)
 - After installing, **quit your browser completely and start it again**
   (Make sure it's not still running in the system tray, or the extension won't take effect)
+
+## What's new in 0.2.9
+
+### Fixed
+- **Errors logged** by the Discord reconnect fix in 0.2.8
+  - The cleanup call is async but was wrapped synchronously, so writing to an
+    already-closed socket escaped as an unhandled rejection. Harmless, but it
+    cluttered the log
 
 ## What's new in 0.2.8
 
@@ -201,7 +209,7 @@ Per-version history is in the [CHANGELOG](https://github.com/paeaenteom/tokusats
 
 | File | What it is |
 |---|---|
-| `TOKU-RPC-Setup-0.2.8-beta.exe` | **This is the only one you need** (app bundled inside) |
+| `TOKU-RPC-Setup-0.2.9-beta.exe` | **This is the only one you need** (app bundled inside) |
 | `toku-rpc-extension.crx`, `update.xml` | For automatic extension installation and updates — the browser fetches these on its own |
 | `toku-rpc-extension.zip` | For installing the extension manually (only if the automatic install is blocked) |
 | `TOKU-RPC-<version>-portable.zip` | No-install archive (use if antivirus blocks the exe above) |

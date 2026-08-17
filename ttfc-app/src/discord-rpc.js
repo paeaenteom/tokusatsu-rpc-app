@@ -362,7 +362,9 @@ class DiscordRichPresence {
         //   구조였다(실측: 2분 만에 회복 불가). 새로 만들기 전에 반드시 버린다.
         if (this.client) {
             try { this.client.removeAllListeners(); } catch (e) {}
-            try { this.client.destroy(); } catch (e) {}
+            // ⚠ destroy() 는 Promise 를 돌려준다. 동기 try/catch 로는 거부를 못 잡아
+            //   소켓이 이미 닫힌 상태에서 write 를 시도하며 unhandledRejection 으로 샜다.
+            try { const p = this.client.destroy(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
             this.client = null;
         }
         this.client = new RPC.Client({ transport: 'ipc' });
@@ -411,7 +413,10 @@ class DiscordRichPresence {
         if (this._pendingTimer) { clearTimeout(this._pendingTimer); this._pendingTimer = null; }
         if (this._idleTimer) { clearTimeout(this._idleTimer); this._idleTimer = null; }
         if (this.client) {
-            try { this.client.clearActivity(); this.client.destroy(); } catch (e) {}
+            try {
+                const c = this.client.clearActivity(); if (c && c.catch) c.catch(() => {});
+                const p = this.client.destroy();       if (p && p.catch) p.catch(() => {});
+            } catch (e) {}
             this.client = null;
         }
         this.connected = false;

@@ -6,6 +6,16 @@ What changed in each version. Newest first.
 
 ---
 
+## 0.2.9 beta — 2026-08-18
+
+### Fixed
+- **Errors logged** by the Discord reconnect fix in 0.2.8
+  - The cleanup call is async but was wrapped synchronously, so writing to an
+    already-closed socket escaped as an unhandled rejection. Harmless, but it
+    cluttered the log
+
+---
+
 ## 0.2.8 beta — 2026-08-18
 
 ### Fixed

@@ -9,7 +9,7 @@ Supported sites
 - TSUBURAYA IMAGINATION — `imagination.m-78.jp`
 - Disney+ — `www.disneyplus.com` *(experimental)*
 
-> **beta 0.2.8** — This is something I made for myself. There may be bugs.
+> **beta 0.2.9** — This is something I made for myself. There may be bugs.
 
 ---
 
