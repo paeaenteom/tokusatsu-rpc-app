@@ -6,6 +6,36 @@ What changed in each version. Newest first.
 
 ---
 
+## 0.2.8 beta — 2026-08-18
+
+### Fixed
+- **Discord connection died after a while and never came back**
+  - Each reconnect created a new connection without disposing the old one, so handles
+    piled up until Discord refused them all — **retrying made it worse**
+  - Retries now back off (10s up to 2 min), resetting once connected
+- **Your presence vanished when another window came to the front**
+  - Chrome treats a tab as hidden when the browser is merely covered, so opening this
+    app's window or Discord wiped the presence
+  - While watching, being covered no longer clears it. While browsing, it clears only
+    after 15 seconds of staying covered. Closing the tab still clears immediately
+
+### New
+- **Pick how long before the presence auto-clears** — in the app window under "Time display"
+  - Never / 5 min / 30 min / 1 h / 3 h / 6 h / 12 h / 24 h (default 5 min)
+
+### Images appear faster
+- Fixed images taking **over a minute** after a transient failure
+  - Failures were counted, not spaced — with the booster on, three strikes burned in
+    **0.9 seconds** and the image was abandoned for the rest of the page
+  - Recovery requests now every 5 seconds instead of 20
+  - TTFC thumbnails had no working recovery path at all
+- Uploaded images are smaller (**about 44% less**), so they show up sooner
+
+### Binge notifications
+- The attached image is back to its **original aspect ratio** (the profile card stays square)
+
+---
+
 ## 0.2.7 beta — 2026-08-15
 
 ### Antivirus false positive

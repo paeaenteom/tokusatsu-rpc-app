@@ -31,15 +31,25 @@
   //  앱으로 보내고, 업로드(Origin 없는 Node)와 재호스팅 URL 사용은 앱이 담당한다.
   //  같은 이미지는 1회만 전송. URL 매핑은 원본 URL 그대로 보낸다(앱이 캐시 키로 씀).
   const sentThumbs = new Set();
-  const thumbFails = new Map();  // URL → 실패 횟수 (3회 초과 시 포기)
+  // URL → { n: 실패 횟수, at: 마지막 시도 시각 }
+  //  ⚠ 예전엔 횟수만 셌다. ensureThumbBytes 는 매 틱 불리는데 부스터를 켜면 틱이 300ms 라
+  //    일시적인 장애가 0.9초만 이어져도 3스트라이크가 다 타고 그 페이지 내내 포기했다.
+  //    이제 재시도 사이에 최소 간격을 두어, '짧은 장애'와 '진짜 안 되는 이미지'를 구분한다.
+  const thumbFails = new Map();
+  const RETRY_GAP_MS = 3000;   // 재시도 최소 간격
+  const MAX_TRIES = 5;         // 이 횟수를 '간격을 두고' 넘기면 포기
 
   // 이 탭(사이트)이 가져올 수 있는 이미지인지 — NEED_THUMB 브로드캐스트 필터용
   function ownsImage(url) {
     try {
       const h = new URL(url, location.href).host;
+      // ⚠ 사이트 도메인만 인정하면 정작 이미지가 올라간 CDN 을 '남의 것' 으로 판정해,
+      //   앱이 보내는 NEED_THUMB 복구 요청을 어느 탭도 받지 않는다.
+      //   (실측: TTFC 썸네일은 cloudfront 라 복구 경로가 통째로 죽어 있었다)
       return h === location.host || h.endsWith('.' + location.host.split('.').slice(-3).join('.'))
         || (SITE.id === 'imagination' && /m-78\.jp$/.test(h))
-        || (SITE.id === 'ttfc' && /tokusatsu-fc\.jp$/.test(h));
+        || (SITE.id === 'ttfc' && /(tokusatsu-fc\.jp|cloudfront\.net)$/.test(h))
+        || (SITE.id === 'disneyplus' && /(disneyplus\.com|bamgrid\.com|disney-plus\.net)$/.test(h));
     } catch (e) { return false; }
   }
 
@@ -71,14 +81,19 @@
   //  다른 사이트는 안 넘기므로 undefined → 예전과 똑같이 동작한다.
   function ensureThumbBytes(url, bgUrl) {
     if (!needsRehost(url) || sentThumbs.has(url)) return;
-    if ((thumbFails.get(url) || 0) >= 3) return;  // 반복 실패 → 포기 (로고 폴백)
+    const rec = thumbFails.get(url);
+    if (rec) {
+      if (rec.n >= MAX_TRIES) return;                      // 간격을 두고도 계속 실패 → 포기
+      if (Date.now() - rec.at < RETRY_GAP_MS) return;      // 방금 실패했으면 잠시 쉰다
+    }
     // 메모리 상한 — 초과 시 리셋 (재전송돼도 앱의 _thumbCache/_thumbPending이 중복 방지)
     if (sentThumbs.size > 100) sentThumbs.clear();
     if (thumbFails.size > 100) thumbFails.clear();
     sentThumbs.add(url);
     const failed = (why) => {
       LOG('썸네일 바이트 추출/전송 실패:', why);
-      thumbFails.set(url, (thumbFails.get(url) || 0) + 1);
+      const prev = thumbFails.get(url);
+      thumbFails.set(url, { n: (prev ? prev.n : 0) + 1, at: Date.now() });
       sentThumbs.delete(url);
     };
 
@@ -677,12 +692,27 @@
     lastStateStr = '';
   }
 
+  // ── 탭이 가려졌을 때 ──
+  //  ⚠ 예전엔 숨는 즉시 CLEAR 를 쐈다. 그런데 Chrome 은 **다른 창이 브라우저를 덮기만 해도**
+  //    그 탭을 hidden 으로 본다. 그래서 TOKU RPC 미니 창이나 Discord 를 앞으로 가져오는
+  //    순간 프레즌스가 통째로 사라졌다(실측). 심지어 영상 페이지에 막 들어와 플레이어가
+  //    아직 준비 전이면 playing=false 라 그대로 지워졌다.
+  //  → 영상 페이지에서는 숨었다고 지우지 않는다. 진짜로 떠난 경우는 pagehide 와
+  //    워커의 onRemoved 가 잡고, 그래도 소식이 끊기면 앱의 '자동 해제' 설정이 거둔다.
+  //    둘러보는 중일 때만, 그것도 잠깐 가린 게 아니라 계속 가려져 있을 때만 지운다.
+  const HIDE_CLEAR_DELAY = 15000;
+  let hideTimer = null;
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
-      const video = SITE.getVideoElement();
-      const playing = video && !video.paused && !video.ended;
-      if (!playing) sendClear('탭 숨김');
+      if (SITE.isPlaybackUrl()) return;          // 시청 중 — 잠깐 다른 창을 본 것뿐이다
+      if (hideTimer) return;
+      hideTimer = setTimeout(() => {
+        hideTimer = null;
+        if (!document.hidden || SITE.isPlaybackUrl()) return;
+        sendClear('탭이 계속 가려져 있음');
+      }, HIDE_CLEAR_DELAY);
     } else {
+      if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }   // 돌아왔으니 취소
       sendUpdate(true);
     }
   });

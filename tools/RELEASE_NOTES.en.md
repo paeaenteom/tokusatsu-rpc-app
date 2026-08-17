@@ -1,8 +1,8 @@
-Addressed the antivirus false positive that was deleting the download, and added a no-install archive.
+Fixed the Discord connection dying over time, and the presence vanishing when another window came forward.
 
 ## Install
 
-Just grab **`TOKU-RPC-Setup-0.2.7-beta.exe`** below and run it — that one file is all you need.
+Just grab **`TOKU-RPC-Setup-0.2.8-beta.exe`** below and run it — that one file is all you need.
 The app and the browser extension are installed in one go. There's nothing else to download.
 
 - In the installer window, just **check off the browsers you want the extension in**
@@ -11,6 +11,34 @@ The app and the browser extension are installed in one go. There's nothing else 
   (That's because Windows only lets admins write to the extension policy key. The app itself installs to your own user folder)
 - After installing, **quit your browser completely and start it again**
   (Make sure it's not still running in the system tray, or the extension won't take effect)
+
+## What's new in 0.2.8
+
+### Fixed
+- **Discord connection died after a while and never came back**
+  - Each reconnect created a new connection without disposing the old one, so handles
+    piled up until Discord refused them all — **retrying made it worse**
+  - Retries now back off (10s up to 2 min), resetting once connected
+- **Your presence vanished when another window came to the front**
+  - Chrome treats a tab as hidden when the browser is merely covered, so opening this
+    app's window or Discord wiped the presence
+  - While watching, being covered no longer clears it. While browsing, it clears only
+    after 15 seconds of staying covered. Closing the tab still clears immediately
+
+### New
+- **Pick how long before the presence auto-clears** — in the app window under "Time display"
+  - Never / 5 min / 30 min / 1 h / 3 h / 6 h / 12 h / 24 h (default 5 min)
+
+### Images appear faster
+- Fixed images taking **over a minute** after a transient failure
+  - Failures were counted, not spaced — with the booster on, three strikes burned in
+    **0.9 seconds** and the image was abandoned for the rest of the page
+  - Recovery requests now every 5 seconds instead of 20
+  - TTFC thumbnails had no working recovery path at all
+- Uploaded images are smaller (**about 44% less**), so they show up sooner
+
+### Binge notifications
+- The attached image is back to its **original aspect ratio** (the profile card stays square)
 
 ## What's new in 0.2.7
 
@@ -173,7 +201,7 @@ Per-version history is in the [CHANGELOG](https://github.com/paeaenteom/tokusats
 
 | File | What it is |
 |---|---|
-| `TOKU-RPC-Setup-0.2.7-beta.exe` | **This is the only one you need** (app bundled inside) |
+| `TOKU-RPC-Setup-0.2.8-beta.exe` | **This is the only one you need** (app bundled inside) |
 | `toku-rpc-extension.crx`, `update.xml` | For automatic extension installation and updates — the browser fetches these on its own |
 | `toku-rpc-extension.zip` | For installing the extension manually (only if the automatic install is blocked) |
 | `TOKU-RPC-<version>-portable.zip` | No-install archive (use if antivirus blocks the exe above) |

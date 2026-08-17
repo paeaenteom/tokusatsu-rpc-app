@@ -115,10 +115,15 @@ class BingeLogger {
 
         // 1순위: 이미지를 디스코드에 직접 첨부 (외부 호스트 만료와 무관하게 영구 보존)
         if (bytes && bytes.buf) {
-            embed.image = { url: 'attachment://thumb.jpg' };
+            // 파일명 확장자를 실제 형식에 맞춘다 — PNG 를 .jpg 로 붙이면 클라이언트에
+            // 따라 미리보기가 깨질 수 있다 (원본은 사이트에 따라 png/webp 로 온다)
+            const ext = /png/i.test(bytes.type || '') ? 'png'
+                      : /webp/i.test(bytes.type || '') ? 'webp' : 'jpg';
+            const fname = 'thumb.' + ext;
+            embed.image = { url: 'attachment://' + fname };
             const fd = new FormData();
             fd.append('payload_json', JSON.stringify({ content, embeds: [embed] }));
-            fd.append('files[0]', new Blob([bytes.buf], { type: bytes.type || 'image/jpeg' }), 'thumb.jpg');
+            fd.append('files[0]', new Blob([bytes.buf], { type: bytes.type || 'image/jpeg' }), fname);
             return this._postForm(fd);
         }
         // 2순위: 재호스팅/원본 URL (TTFC cloudfront 등)

@@ -143,7 +143,9 @@ class ExtensionBridge {
         if (!rpc || rpc._cachedThumb(url) || rpc._thumbPending.has(url)) return;
         const now = Date.now();
         this._thumbAsks = this._thumbAsks || new Map();
-        if (now - (this._thumbAsks.get(url) || 0) < 20000) return;  // 20초 쿨다운
+        // 쿨다운이 길면 첫 시도가 실패했을 때 그대로 그만큼 화면이 비어 있는다.
+        //  실측: 20초였을 때 실패가 세 번 겹치면 이미지가 1분 넘게 안 떴다.
+        if (now - (this._thumbAsks.get(url) || 0) < 5000) return;   // 5초 쿨다운
         this._thumbAsks.set(url, now);
         if (this._thumbAsks.size > 50) this._thumbAsks.clear();
         try { ws.send(JSON.stringify({ type: 'NEED_THUMB', url })); } catch (e) {}
@@ -167,7 +169,8 @@ class ExtensionBridge {
 
         // 썸네일 바이트 → 앱이 catbox 업로드 후 캐시 (imagination 재호스팅)
         if (msg.type === 'THUMB_BYTES') {
-            this.discordRPC.cacheThumbnail(msg.url, msg.dataUrl);
+            // rawDataUrl = 원본(비정사각). 정주행 알림 첨부는 이걸 써야 임베드가 안 좁아진다.
+            this.discordRPC.cacheThumbnail(msg.url, msg.dataUrl, 0, msg.rawDataUrl);
             return;
         }
 

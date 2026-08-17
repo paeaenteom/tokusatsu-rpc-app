@@ -31,8 +31,10 @@ const LOG = (...a) => console.log('[TOKU RPC/bg]', ...a);
 //  (PreMiD 도 YouTube 썸네일을 같은 이유로 320x320 캔버스에 얹어 보낸다)
 //  ⚠ 실패하면 반드시 원본을 그대로 돌려준다 — 예전 동작(잘린 썸네일)이 유지될 뿐
 //    썸네일이 사라지지는 않아야 한다.
-const SQ_SIZE = 512;          // 캔버스 한 변
-const SQ_SIZE_SMALL = 384;    // PNG 가 너무 크면 한 단계 줄인다
+// 캔버스 한 변. Discord 는 이 이미지를 카드에서 160px 안팎으로 그린다 — 512 는 필요 이상이고,
+// 파일이 클수록 **Discord 가 그 URL 을 받아오는 시간**이 늘어 화면에 늦게 뜬다(실측 평균 280KB).
+const SQ_SIZE = 384;
+const SQ_SIZE_SMALL = 288;    // 그래도 크면 한 단계 더 줄인다
 const SQ_MAX_BYTES = 900 * 1024;
 
 // Blob → dataURL. 서비스 워커엔 FileReader 가 없어 직접 base64 로 만든다.
@@ -52,8 +54,10 @@ async function squarePad(blob, size) {
   try {
     const w = bmp.width, h = bmp.height;
     if (!w || !h) throw new Error('빈 이미지');
-    // 이미 정사각이면 재인코딩할 이유가 없다 (용량만 늘고 화질만 깎인다)
-    if (Math.abs(w - h) / Math.max(w, h) < 0.02) return null;
+    // 이미 정사각이고 캔버스보다 크지 않으면 손대지 않는다 (재인코딩은 화질만 깎는다).
+    //  ⚠ 크면 줄인다 — 예전엔 512x512 원본(329KB)을 그대로 올려 표시가 그만큼 늦었다.
+    const square = Math.abs(w - h) / Math.max(w, h) < 0.02;
+    if (square && w <= (size || SQ_SIZE)) return null;
     const s = size || SQ_SIZE;
     const scale = Math.min(s / w, s / h);
     const dw = Math.round(w * scale), dh = Math.round(h * scale);
@@ -134,18 +138,20 @@ async function fetchImage(url) {
 //  콘텐트 스크립트(page origin)는 CORS 에 막히지만, 워커는 host_permissions 로
 //  받을 수 있다 — TTFC cloudfront · 디즈니+ bamgrid 썸네일이 이 경로를 탄다.
 //  bgUrl 이 있으면 그 위에 얹어 합성한다. 배경을 못 받으면 조용히 로고만 쓴다.
+//  { dataUrl: 정사각본(RPC 용), rawDataUrl: 원본(웹훅 첨부용) } 을 돌려준다.
 async function fetchSquareBytes(url, bgUrl) {
   const blob = await fetchImage(url);
+  const rawDataUrl = await blobToDataUrl(blob);
   if (bgUrl) {
     try {
       const out = await compositeSquare(await fetchImage(bgUrl), blob, SQ_SIZE);
-      if (out) return await blobToDataUrl(out);
+      if (out) return { dataUrl: await blobToDataUrl(out), rawDataUrl };
     } catch (e) {
       LOG('배경 합성 실패 — 로고만 사용:', e.message);
     }
   }
   const out = await squarePad(blob, SQ_SIZE);
-  return await blobToDataUrl(out || blob);
+  return { dataUrl: out ? await blobToDataUrl(out) : rawDataUrl, rawDataUrl };
 }
 
 // url → 배경 url. 앱이 NEED_THUMB 로 다시 요청할 때도 같은 합성본을 만들려면
@@ -269,7 +275,7 @@ function ensureConnected() {
           // 앱이 특정 이미지 바이트를 요청 (캐시 없음/만료/업로드 실패 복구)
           //  ① 워커가 직접 받아 본다 — CORS 를 안 타서 가장 확실하다
           fetchSquareBytes(msg.url, bgFor.get(msg.url))
-            .then((dataUrl) => rawSend({ type: 'THUMB_BYTES', url: msg.url, dataUrl }))
+            .then((r) => rawSend({ type: 'THUMB_BYTES', url: msg.url, dataUrl: r.dataUrl, rawDataUrl: r.rawDataUrl }))
             .catch(() => {
               //  ② 실패하면 예전처럼 탭에 요청 (사이트 세션이 있어야 열리는 이미지)
               chrome.tabs.query({}, (tabs) => {
@@ -391,10 +397,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ ok: false });
       return true;
     }
-    // 보내기 전에 정사각으로 — 디스코드가 좌우를 잘라먹지 않게
+    // 보내기 전에 정사각으로 — 디스코드가 좌우를 잘라먹지 않게.
+    //  ⚠ 원본도 같이 보낸다. 정주행 알림(웹훅)은 임베드에 그대로 붙는 이미지라
+    //    정사각본을 쓰면 좌우에 빈 띠가 생겨 좁아 보인다. 그쪽은 원본이 맞다.
     rememberBg(msg.url, msg.bgUrl);
     toSquareDataUrl(msg.dataUrl, msg.bgUrl || bgFor.get(msg.url)).then((dataUrl) => {
-      sendResponse({ ok: rawSend({ type: 'THUMB_BYTES', url: msg.url, dataUrl }) });
+      sendResponse({ ok: rawSend({ type: 'THUMB_BYTES', url: msg.url, dataUrl, rawDataUrl: msg.dataUrl }) });
     });
   } else if (msg.action === 'THUMB_FETCH') {
     // 콘텐트 스크립트가 CORS 로 못 가져온 이미지 — 워커가 직접 받는다
@@ -405,7 +413,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     rememberBg(msg.url, msg.bgUrl);
     fetchSquareBytes(msg.url, msg.bgUrl || bgFor.get(msg.url))
-      .then((dataUrl) => sendResponse({ ok: rawSend({ type: 'THUMB_BYTES', url: msg.url, dataUrl }) }))
+      .then((r) => sendResponse({ ok: rawSend({ type: 'THUMB_BYTES', url: msg.url, dataUrl: r.dataUrl, rawDataUrl: r.rawDataUrl }) }))
       .catch((e) => {
         LOG('워커 썸네일 페치 실패:', msg.url, e.message);
         sendResponse({ ok: false });

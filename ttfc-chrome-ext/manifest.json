@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TOKU RPC",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "_key_설명": "확장 ID를 고정하는 공개키. 이게 있어야 자동 설치(정책)와 수동 로드가 같은 ID(dciaobllfdcegjcdmimclgglapnhggjm)를 쓴다. 서명용 개인키(.pem)는 저장소에 없으며 로컬에만 보관한다.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtdXU7Irp6ZE9BnzNdaeCLf+REWfTOkja4lWbnY8Gla2ob3uaHQWV+HPH+Su6pI7qqd3egQOQRbT3krl6TS+ijCeyCAwpVLE7dHWh9OhREQnPgaO9lVc9S4QgW46B3320KL/S3mV29R5vCRhtTi2HAqbg4QWSQbTh8j4gmW2kh8btvswv54I51TjBhiyy5UhCahquGSK3HI7c9MwG6c7bblz2x8SAPXA05M9I4PREc00UUVhlK1uzc0HmDbW0/afrHwgUgTTGVJmUedDi/sk56AnWQXqvU47evm1lg/GEF9wKhMEK51BC0d84oVnCta3hld5GLF8AGF/MLS/QrKkQ6QIDAQAB",
   "description": "特撮配信サイト（東映特撮ファンクラブ・TSUBURAYA IMAGINATION）と Disney+ の視聴情報を Discord に表示します",
@@ -89,5 +89,5 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "version_name": "0.2.7 beta"
+  "version_name": "0.2.8 beta"
 }

@@ -9,7 +9,7 @@
 - TSUBURAYA IMAGINATION — `imagination.m-78.jp`
 - Disney+ — `www.disneyplus.com` *(実験)*
 
-> **beta 0.2.7** — 個人用に作ったツールです。バグがあるかもしれません。
+> **beta 0.2.8** — 個人用に作ったツールです。バグがあるかもしれません。
 
 ---
 

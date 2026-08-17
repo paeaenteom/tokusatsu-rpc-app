@@ -284,6 +284,7 @@ class DiscordRichPresence {
 
         // 5분 비활동 → RPC 끄기
         this._idleTimer = null;
+        // 0 = 자동 해제 안 함. 미니 창에서 정할 수 있다 (기본 5분).
         this._IDLE_TIMEOUT = 5 * 60 * 1000;
 
         // 미니 창용: 상태 변경 콜백 + 현재 표시 내용
@@ -355,6 +356,15 @@ class DiscordRichPresence {
 
     connect() {
         if (this.connected) return;
+        // ⚠ 2026-08-18: 이전 클라이언트를 정리하지 않고 새로 만들면 IPC 핸들이 그대로 남는다.
+        //   10초마다 재시도 × 사이트 클라이언트 3개면 핸들이 계속 쌓여, 결국 Discord 가
+        //   전부 거부하고 'connection closed' 가 무한 반복된다 — 재시도할수록 더 안 되는
+        //   구조였다(실측: 2분 만에 회복 불가). 새로 만들기 전에 반드시 버린다.
+        if (this.client) {
+            try { this.client.removeAllListeners(); } catch (e) {}
+            try { this.client.destroy(); } catch (e) {}
+            this.client = null;
+        }
         this.client = new RPC.Client({ transport: 'ipc' });
 
         const origRequest = this.client.request.bind(this.client);
@@ -368,6 +378,7 @@ class DiscordRichPresence {
 
         this.client.on('ready', () => {
             this.connected = true;
+            this._reconnectWait = 10000;   // 붙었으니 다음 재시도 간격을 원위치
             this._switchingTo = null;
             log.info('[RPC] Connected:', this.client.user?.username);
             this._notifyStatus();
@@ -406,9 +417,14 @@ class DiscordRichPresence {
         this.connected = false;
     }
 
+    //  계속 실패하면 간격을 늘린다 (10s → 20s → 40s … 최대 2분).
+    //  고정 10초로 두드리면 Discord 가 막고 있는 상황을 더 악화시킬 뿐이다.
+    //  한 번이라도 붙으면 _resetBackoff 로 다시 10초부터 시작한다.
     _scheduleReconnect() {
         if (this.reconnectTimer) return;
-        this.reconnectTimer = setTimeout(() => { this.reconnectTimer = null; this.connect(); }, 10000);
+        const wait = this._reconnectWait || 10000;
+        this._reconnectWait = Math.min(wait * 2, 120000);
+        this.reconnectTimer = setTimeout(() => { this.reconnectTimer = null; this.connect(); }, wait);
     }
 
     // ══════════════════════════════════════
@@ -587,8 +603,8 @@ class DiscordRichPresence {
             //   이게 없으면 30초 갱신이 스스로 _resetIdleTimer 를 다시 감아
             //   5분 유휴 해제가 영원히 발화하지 않는다(실측 확인 — 안전망이 스스로를 무력화).
             //   그 결과 닫힌 탭의 마지막 화면이 프로필에 무한히 남았다.
-            if (Date.now() - (this._lastInputAt || 0) > this._IDLE_TIMEOUT) {
-                log.info('[RPC] 확장 소식 5분 끊김 → Activity 제거');
+            if (this._IDLE_TIMEOUT && Date.now() - (this._lastInputAt || 0) > this._IDLE_TIMEOUT) {
+                log.info(`[RPC] 확장 소식 ${Math.round(this._IDLE_TIMEOUT / 60000)}분 끊김 → Activity 제거`);
                 this.clearActivity();
                 return;
             }
@@ -762,9 +778,10 @@ class DiscordRichPresence {
     }
 
     _resetIdleTimer() {
-        if (this._idleTimer) clearTimeout(this._idleTimer);
+        if (this._idleTimer) { clearTimeout(this._idleTimer); this._idleTimer = null; }
+        if (!this._IDLE_TIMEOUT) return;   // '안 사라짐' — 스스로 내리지 않는다
         this._idleTimer = setTimeout(() => {
-            log.info('[RPC] 5분 비활동 → Activity 제거');
+            log.info(`[RPC] ${Math.round(this._IDLE_TIMEOUT / 60000)}분 비활동 → Activity 제거`);
             this._stopRefreshTimer();
             try { if (this.client) this.client.clearActivity(); } catch (e) {}
             this.lastActivity = null;
@@ -772,6 +789,14 @@ class DiscordRichPresence {
             // _lastBrowsingKey는 유지 — 동일 페이지 하트비트로 되살아나지 않게
             this._notifyStatus();
         }, this._IDLE_TIMEOUT);
+    }
+
+    // 자동 해제까지의 시간(ms). 0 이면 스스로 내리지 않는다.
+    //  이미 걸려 있는 타이머는 새 값으로 다시 건다 — 설정을 바꾼 즉시 반영되게.
+    setIdleTimeout(ms) {
+        this._IDLE_TIMEOUT = Math.max(0, Number(ms) || 0);
+        if (this._idleTimer) { clearTimeout(this._idleTimer); this._idleTimer = null; }
+        if (this._IDLE_TIMEOUT && this.lastActivity) this._resetIdleTimer();
     }
 
     clearActivity() {
@@ -855,6 +880,7 @@ class DiscordRpcHub {
             c = new DiscordRichPresence(appIdOf(id));
             this._seedHosted(c);   // 이미 올려 둔 이미지는 다시 올리지 않게
             c.setLang(this.lang);
+            if (this.idleTimeout != null) c.setIdleTimeout(this.idleTimeout);
             c.onStatusChange = () => { if (this.onStatusChange) this.onStatusChange(); };
             this.clients.set(id, c);
             log.info(`[RPC] 사이트 클라이언트 생성: ${id} (${appIdOf(id)})`);
@@ -888,15 +914,24 @@ class DiscordRpcHub {
 
     setLang(lang) { this.lang = lang; for (const c of this.clients.values()) c.setLang(lang); }
 
+    // 자동 해제 시간 — 나중에 생기는 클라이언트에도 같은 값이 가도록 기억해 둔다
+    setIdleTimeout(ms) {
+        this.idleTimeout = Math.max(0, Number(ms) || 0);
+        for (const c of this.clients.values()) c.setIdleTimeout(this.idleTimeout);
+    }
+
     // 썸네일 바이트 → 공개 호스트에 올려 전 클라이언트 캐시에 꽂는다.
     //  ⚠ 2026-08-14: 예전엔 클라이언트마다 각자 올렸다(c.cacheThumbnail 을 순회).
     //    사이트 클라이언트가 3개면 **똑같은 이미지를 3번** 업로드해, 네트워크를 3배 쓰고
     //    화면에 뜨는 것도 그만큼 늦어졌다 (로그에서 재호스팅 OK 가 매번 3줄씩 찍혔다).
     //    이제 허브에서 한 번만 올리고 결과 URL 만 나눠준다.
-    async cacheThumbnail(url, dataUrl, attempt = 0) {
+    //  rawDataUrl: 원본(비정사각). 정주행 알림 첨부용으로 따로 보관한다.
+    //   업로드/RPC 카드는 정사각본(dataUrl)을 쓰지만, 웹훅 임베드는 이미지를 그대로
+    //   비율대로 그리므로 정사각본을 붙이면 좌우가 빈 띠가 되어 좁아 보인다.
+    async cacheThumbnail(url, dataUrl, attempt = 0, rawDataUrl) {
         if (!url) return;
         if (attempt === 0) {
-            this.rememberThumbBytes(url, dataUrl);              // 업로드와 무관하게 바이트 확보
+            this.rememberThumbBytes(url, rawDataUrl || dataUrl);   // 알림 첨부는 원본 우선
             if (this._cachedThumb(url) || this._uploading.has(url)) return;
         }
         this._uploading.add(url);   // 재시도 대기 중에도 유지 → 중복 업로드 방지
@@ -909,7 +944,7 @@ class DiscordRpcHub {
             log.warn(`[RPC] 썸네일 재호스팅 실패(${attempt + 1}/4):`, e.message);
             if (attempt < 3) {
                 const wait = 15000 * Math.pow(2, attempt);      // 15s → 30s → 60s
-                setTimeout(() => this.cacheThumbnail(url, dataUrl, attempt + 1), wait);
+                setTimeout(() => this.cacheThumbnail(url, dataUrl, attempt + 1, rawDataUrl), wait);
             } else {
                 this._uploading.delete(url);                    // 최종 포기 → 로고 유지
             }

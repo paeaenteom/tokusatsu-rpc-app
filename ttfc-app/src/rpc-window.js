@@ -20,6 +20,9 @@ function t(key, vars) {
 }
 
 function applyStrings() {
+  // 자동 해제 선택지는 data-i18n 이 아니라 JS 로 만든 <option> 이라 따로 다시 그린다
+  const idle = document.getElementById('idleTimeout');
+  if (idle && idle.options.length) renderIdleOptions(Number(idle.value));
   document.querySelectorAll('[data-i18n]').forEach((el) => {
     el.textContent = t(el.getAttribute('data-i18n'));
   });
@@ -189,8 +192,29 @@ async function loadSettings() {
   $('showThumbnail').checked = cfg.showThumbnail !== false;
   $('showButtons').checked = cfg.showButtons !== false;
   $('timeMode').value = cfg.timeMode || 'progress';
+  renderIdleOptions(cfg.idleTimeout);
   $('ver').textContent = 'v' + (cfg.version || '4.2.1');
   return cfg;
+}
+
+// 자동 해제 시간 선택지 — 0 은 '안 사라짐'
+const IDLE_CHOICES = [0, 5, 30, 60, 180, 360, 720, 1440];
+function idleLabel(min) {
+  if (!min) return t('win.idleNever');
+  if (min < 60) return t('win.idleMin', { n: min });
+  return t('win.idleHour', { n: min / 60 });
+}
+function renderIdleOptions(current) {
+  const sel = $('idleTimeout');
+  const cur = current == null ? 5 : Number(current);
+  sel.innerHTML = '';
+  for (const m of IDLE_CHOICES) {
+    const o = document.createElement('option');
+    o.value = String(m);
+    o.textContent = idleLabel(m);
+    sel.appendChild(o);
+  }
+  sel.value = String(IDLE_CHOICES.includes(cur) ? cur : 5);
 }
 
 function bindSettings() {
@@ -201,6 +225,9 @@ function bindSettings() {
   });
   $('timeMode').addEventListener('change', () => {
     window.rpcAPI.setSetting('timeMode', $('timeMode').value);
+  });
+  $('idleTimeout').addEventListener('change', () => {
+    window.rpcAPI.setSetting('idleTimeout', Number($('idleTimeout').value));
   });
 }
 

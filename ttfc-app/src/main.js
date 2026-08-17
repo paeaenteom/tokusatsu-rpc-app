@@ -61,6 +61,7 @@ const store = new Store({
             showThumbnail: true,
             showButtons: true,
             timeMode: 'progress',   // progress | remaining | none
+            idleTimeout: 5,         // 자동 해제까지 분 (0 = 안 사라짐)
         },
         lang: 'auto',               // auto | ko | en | ja
         updateNotify: true,         // 새 버전 알림 받기
@@ -115,6 +116,27 @@ function rpcSettings() {
         showThumbnail: store.get('rpc.showThumbnail'),
         showButtons: store.get('rpc.showButtons'),
     };
+}
+
+// ── RPC 자동 해제 ──
+//  확장에서 소식이 끊긴 뒤 얼마나 지나면 프로필에서 내릴지. 0 이면 안 내린다.
+//  (브라우저가 죽거나 PC 가 잠들어 CLEAR 를 못 받는 경우를 위한 안전망)
+// ⚠ electron-store 의 defaults 는 'rpc' 객체가 이미 저장돼 있으면 그 안쪽에 새로 추가된
+//   키를 채워 주지 않는다. 그래서 기존 사용자에겐 undefined 가 오고, 그대로 Number()
+//   하면 0(=안 사라짐)이 되어 버린다. 값이 없을 때는 기본 5분으로 본다.
+//   0 은 사용자가 직접 고른 '안 사라짐' 이므로 없는 값과 구분해야 한다.
+function idleMinutes() {
+    const raw = store.get('rpc.idleTimeout');
+    if (raw == null) return 5;
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= 0 ? n : 5;
+}
+
+function applyIdleTimeout() {
+    if (!discordRPC || typeof discordRPC.setIdleTimeout !== 'function') return;
+    const min = idleMinutes();
+    discordRPC.setIdleTimeout(min * 60 * 1000);
+    log.info('[RPC] 자동 해제:', min ? min + '분' : '안 함');
 }
 
 // ── 부스터 ──
@@ -383,6 +405,7 @@ ipcMain.handle('rpc-get-settings', () => ({
     showThumbnail: store.get('rpc.showThumbnail'),
     showButtons: store.get('rpc.showButtons'),
     timeMode: store.get('rpc.timeMode'),
+    idleTimeout: idleMinutes(),
     version: app.getVersion(),
     lang: store.get('lang'),          // 설정값 그대로 ('auto' 포함)
     updateNotify: store.get('updateNotify'),
@@ -449,6 +472,12 @@ ipcMain.handle('rpc-set-setting', (e, key, value) => {
     if (allowed.includes(key)) {
         store.set('rpc.' + key, value);
     }
+    // 자동 해제 시간은 저장만 하는 게 아니라 지금 돌고 있는 타이머에도 바로 먹여야 한다
+    if (key === 'idleTimeout') {
+        const min = Math.max(0, Number(value) || 0);
+        store.set('rpc.idleTimeout', min);
+        applyIdleTimeout();
+    }
     return true;
 });
 
@@ -499,6 +528,7 @@ if (!gotLock) {
         // Discord RPC
         discordRPC = new DiscordRPC(DISCORD_APP_ID);
         discordRPC.setLang(currentLang());
+        applyIdleTimeout();   // 저장해 둔 자동 해제 시간을 시작할 때부터 적용
         discordRPC.onStatusChange = () => pushStatus();
         if (store.get('rpc.enabled') && store.get('rpc.autoConnect')) {
             discordRPC.connect();
