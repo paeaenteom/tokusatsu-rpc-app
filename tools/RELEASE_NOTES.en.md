@@ -1,8 +1,8 @@
-Cleans up errors logged in 0.2.8. No functional change.
+Adds YouTube support (videos, Shorts, live streams, channels) and fixes Discord dropping its own connection on every startup.
 
 ## Install
 
-Just grab **`TOKU-RPC-Setup-0.2.9-beta.exe`** below and run it — that one file is all you need.
+Just grab **`TOKU-RPC-Setup-0.2.10-beta.exe`** below and run it — that one file is all you need.
 The app and the browser extension are installed in one go. There's nothing else to download.
 
 - In the installer window, just **check off the browsers you want the extension in**
@@ -11,6 +11,29 @@ The app and the browser extension are installed in one go. There's nothing else 
   (That's because Windows only lets admins write to the extension policy key. The app itself installs to your own user folder)
 - After installing, **quit your browser completely and start it again**
   (Make sure it's not still running in the system tray, or the extension won't take effect)
+
+## What's new in 0.2.10
+
+### New
+- **YouTube support**
+  - Video title, channel name, elapsed time, thumbnail
+  - **Shorts**
+  - **Live streams** — the timer counts up from when the broadcast started,
+    so joining midway still shows the full elapsed time
+  - **Channel pages** show that channel’s profile picture
+  - Browsing: Home, Search, Subscriptions, History, Playlist, Channel
+
+### Fixed (affects every site)
+- **Discord dropped its own connection right after startup**
+  - The first client was logged in twice; the abandoned one failed 10 seconds
+    later and tore down the healthy connection with it
+  - Measured: dropped at 10s, retried at 20s, reconnected at 30s. Now zero
+- **The card took a long time to appear when the app had just started**
+  - A state that arrived before the connection was ready was discarded, so the
+    profile stayed empty until the 30-second refresh came around
+- **Videos without a thumbnail were re-fetched every 5 seconds forever**
+  - A give-up counter existed, but the app’s recovery request reset it to zero
+    every time, so it never fired
 
 ## What's new in 0.2.9
 
@@ -209,7 +232,7 @@ Per-version history is in the [CHANGELOG](https://github.com/paeaenteom/tokusats
 
 | File | What it is |
 |---|---|
-| `TOKU-RPC-Setup-0.2.9-beta.exe` | **This is the only one you need** (app bundled inside) |
+| `TOKU-RPC-Setup-0.2.10-beta.exe` | **This is the only one you need** (app bundled inside) |
 | `toku-rpc-extension.crx`, `update.xml` | For automatic extension installation and updates — the browser fetches these on its own |
 | `toku-rpc-extension.zip` | For installing the extension manually (only if the automatic install is blocked) |
 | `TOKU-RPC-<version>-portable.zip` | No-install archive (use if antivirus blocks the exe above) |

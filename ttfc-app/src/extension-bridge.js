@@ -218,6 +218,8 @@ class ExtensionBridge {
                 duration: msg.duration || 0,
                 thumbnail: msg.thumbnail || '',
                 pageUrl: msg.url || '',
+                isLive: !!msg.isLive,
+                liveStartedAt: msg.liveStartedAt || 0,
                 _settings: settings,
             });
             return;

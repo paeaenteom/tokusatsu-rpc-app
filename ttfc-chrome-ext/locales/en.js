@@ -40,6 +40,13 @@
   'badge.bingeEnd': '🏁 Binge complete! (last episode)',
 
   // ── Page kinds (shown on Discord when no video is playing) ──
+  // YouTube
+  'yt.ad': 'Ad playing',
+  'yt.search': 'Search',
+  'yt.subscriptions': 'Subscriptions',
+  'yt.history': 'History',
+  'yt.playlist': 'Playlist',
+  'yt.channel': 'Channel',
   'page.browsing': 'Browsing',
   'page.work': 'Show page',
   'page.special': 'Special',

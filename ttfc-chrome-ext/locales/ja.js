@@ -40,6 +40,13 @@
   'badge.bingeEnd': '🏁 一気見終了! (最終話)',
 
   // ── ページの種類 (動画を見ていないときに Discord に表示される) ──
+  // YouTube
+  'yt.ad': '広告再生中',
+  'yt.search': '検索',
+  'yt.subscriptions': '登録チャンネル',
+  'yt.history': '再生履歴',
+  'yt.playlist': '再生リスト',
+  'yt.channel': 'チャンネル',
   'page.browsing': '閲覧中',
   'page.work': '作品ページ',
   'page.special': '特集',

@@ -126,9 +126,24 @@ async function compositeSquare(bgBlob, logoBlob, size) {
   return await cv.convertToBlob({ type: 'image/jpeg', quality: 0.88 });
 }
 
+// i.ytimg.com 은 maxresdefault 가 없는 영상이 아주 많다 (실측: 살아 있는 영상 9개 중 5개가 404).
+//  404 면 fetchImage 가 던지고 → 탭 재요청도 같은 404 → 썸네일이 영영 안 뜨고 로고로 떨어졌다.
+//  ⚠ 대체본으로 hqdefault/sddefault 를 쓰면 안 된다. 그건 16:9 를 4:3 틀에 넣은 것이라
+//    **검은 띠가 JPEG 에 구워져** 있다(픽셀 샘플링으로 확인: 위아래 행 밝기 0).
+//    정사각 패딩까지 겹치면 이중 액자가 된다. mqdefault 만 정확히 16:9(320x180)이고 항상 200 이다.
+function ytFallbackUrl(url) {
+  if (!/^https:\/\/i\.ytimg\.com\/vi\//.test(url)) return '';
+  const alt = url.replace(/\/(maxresdefault|sddefault|hq720)\.jpg$/, '/mqdefault.jpg');
+  return alt === url ? '' : alt;
+}
+
 async function fetchImage(url) {
   const r = await fetch(url, { credentials: 'omit' });
-  if (!r.ok) throw new Error('HTTP ' + r.status);
+  if (!r.ok) {
+    const alt = ytFallbackUrl(url);
+    if (alt) { LOG('썸네일 대체본으로 재시도:', alt); return fetchImage(alt); }
+    throw new Error('HTTP ' + r.status);
+  }
   const blob = await r.blob();
   if (!/^image\//.test(blob.type)) throw new Error('이미지 아님: ' + blob.type);
   return blob;

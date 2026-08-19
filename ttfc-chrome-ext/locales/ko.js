@@ -40,6 +40,13 @@
   'badge.bingeEnd': '🏁 정주행 끝! (마지막 화)',
 
   // ── 페이지 종류 (영상을 안 볼 때 Discord 에 표시된다) ──
+  // YouTube
+  'yt.ad': '광고 재생 중',
+  'yt.search': '검색',
+  'yt.subscriptions': '구독',
+  'yt.history': '시청 기록',
+  'yt.playlist': '재생목록',
+  'yt.channel': '채널',
   'page.browsing': '둘러보는 중',
   'page.work': '작품 페이지',
   'page.special': '특집',

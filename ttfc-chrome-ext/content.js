@@ -49,7 +49,9 @@
       return h === location.host || h.endsWith('.' + location.host.split('.').slice(-3).join('.'))
         || (SITE.id === 'imagination' && /m-78\.jp$/.test(h))
         || (SITE.id === 'ttfc' && /(tokusatsu-fc\.jp|cloudfront\.net)$/.test(h))
-        || (SITE.id === 'disneyplus' && /(disneyplus\.com|bamgrid\.com|disney-plus\.net)$/.test(h));
+        || (SITE.id === 'disneyplus' && /(disneyplus\.com|bamgrid\.com|disney-plus\.net)$/.test(h))
+        // 추출기가 자기 CDN 을 직접 밝힐 수 있게 (위 목록에 없는 사이트용)
+        || (typeof SITE.ownsHost === 'function' && SITE.ownsHost(h));
     } catch (e) { return false; }
   }
 
@@ -499,6 +501,9 @@
         loaded: pb ? !!pb.loaded : hasRealVideo,
         binge: bingeMode,
         url: location.href,
+        // 라이브 (추출기가 안 주면 undefined → false/0. 다른 사이트는 영향 없다)
+        isLive: !!info.isLive,
+        liveStartedAt: info.liveStartedAt || 0,
       };
     }
 
@@ -517,7 +522,8 @@
       page: browsing.page || T('page.browsing'),
       detail: browsing.detail || '',
       banner: browsing.banner || '',
-      url: location.href,
+      // 추출기가 URL 을 지정하면 그걸 쓴다 (검색어처럼 주소에 개인 입력이 섞이는 경우)
+      url: browsing.url || location.href,
     };
   }
 
@@ -670,8 +676,15 @@
       // 앱이 명시적으로 요청 — "이미 보냄" 기록을 무시하고 즉시 재추출.
       // 브로드캐스트라 자기 사이트 이미지일 때만 처리 (타 사이트는 CORS로 실패)
       if (!ownsImage(msg.url)) return;
+      // ⚠ 실패 횟수까지 지우면 MAX_TRIES 포기 장치가 영영 발동하지 않는다.
+      //   앱은 캐시에 없는 한 5초마다 NEED_THUMB 을 보내므로, 영구 404 URL 이면
+      //   그때마다 카운터가 0 으로 돌아가 보는 내내 재시도가 반복됐다.
+      //   → 횟수는 남기고 '간격 제한'만 풀어 준다. 앱 재시작 때는 RESET_THUMBS 가
+      //     따로 와서 thumbFails.clear() 로 제대로 복구된다(위 분기).
+      const rec = thumbFails.get(msg.url);
+      if (rec && rec.n >= MAX_TRIES) return;      // 죽은 URL 은 재요청에도 응하지 않는다
       sentThumbs.delete(msg.url);
-      thumbFails.delete(msg.url);
+      if (rec) thumbFails.set(msg.url, { n: rec.n, at: 0 });
       ensureThumbBytes(msg.url);
     }
   });

@@ -60,6 +60,7 @@ module.exports = {
     'rpc.viewOnSite': '사이트에서 보기',
     'rpc.watching': '{site} 시청 중',
     'rpc.paused': '{site}・일시정지',
+    'rpc.live': '{site} 라이브 시청 중',
     'rpc.browsing': '둘러보는 중',
 
     // ── 정주행 웹훅 ──

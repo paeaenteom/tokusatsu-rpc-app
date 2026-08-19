@@ -41,6 +41,7 @@ const THUMB_TTL = 2 * 60 * 60 * 1000; // 재호스팅 URL 유효기간 2시간 (
 //                    kamen_rider_logo · super_sentai_series_logo ·
 //                    metal_hero_series_logo · project_r_e_d_logo
 //    ・IMAGINATION 앱 에셋: tsuburaya_imagination_logo / play / pause
+//    ・YouTube 앱 에셋: logo / play / pause
 const SITES = {
     ttfc: {
         name: '東映特撮ファンクラブ',
@@ -57,6 +58,16 @@ const SITES = {
         logo: 'tsuburaya_imagination_logo',
         play: 'play',
         pause: 'pause',
+    },
+    // ── YouTube ──
+    youtube: {
+        name: 'YouTube',
+        homeUrl: 'https://www.youtube.com/',
+        appId: '1306940866123923476',
+        logo: 'logo',            // 이 앱의 에셋 키 (에셋: logo / play / pause / live)
+        play: 'play',
+        pause: 'pause',
+        live: 'live',
     },
     // ── 디즈니+ (실험) ──
     //  아직 검증 중이라 전용 테스트 애플리케이션을 쓴다. 기존 두 사이트와 앱이
@@ -76,7 +87,11 @@ const SITES = {
 // 애플리케이션 ID — 기본값은 위 상수, 개인 설정이 있으면 그쪽을 우선한다
 // (설치만 하면 바로 동작하고, 자기 앱을 쓰고 싶으면 설정으로 덮어쓸 수 있게)
 function appIdOf(siteId) {
-    return secrets.appId(siteId) || (siteOf(siteId).appId) || SITES.ttfc.appId;
+    const own = secrets.appId(siteId);
+    if (own) return own;
+    // 내장 ID 가 없으면 빈 문자열을 준다. TTFC 것으로 떨어뜨리면 Discord 에
+    // 엉뚱한 앱 이름·아이콘으로 떠서, 안 뜨는 것보다 나쁘다.
+    return siteOf(siteId).appId || '';
 }
 
 function siteOf(id) {
@@ -243,11 +258,14 @@ class DiscordRichPresence {
         this.clientId = clientId;
         this.client = null;
         this.connected = false;
+        this._loggingIn = false;   // login 이 진행 중인가 (연결 중에 갈아엎지 않으려고)
         this.reconnectTimer = null;
         this.lang = 'ko';   // main.js 가 setLang 으로 실제 언어를 넣어준다
 
         this.currentState = {
             isWatching: false,
+            isLive: false,
+            liveStartedAt: 0,
             isPlaying: false,
             site: 'ttfc',
             siteName: '',
@@ -356,6 +374,10 @@ class DiscordRichPresence {
 
     connect() {
         if (this.connected) return;
+        //  로그인은 비동기라 connected 는 아직 false 다. 이때 새로 만들면 앞의 것이 버려지고,
+        //  버려진 쪽 login 의 거부 핸들러가 나중에 this.connected 를 false 로 되돌린다.
+        //  (라이브러리가 10초 뒤 RPC_CONNECTION_TIMEOUT 을 반드시 던지므로 여기서 영영 막히지 않는다)
+        if (this._loggingIn) return;
         // ⚠ 2026-08-18: 이전 클라이언트를 정리하지 않고 새로 만들면 IPC 핸들이 그대로 남는다.
         //   10초마다 재시도 × 사이트 클라이언트 3개면 핸들이 계속 쌓여, 결국 Discord 가
         //   전부 거부하고 'connection closed' 가 무한 반복된다 — 재시도할수록 더 안 되는
@@ -368,6 +390,7 @@ class DiscordRichPresence {
             this.client = null;
         }
         this.client = new RPC.Client({ transport: 'ipc' });
+        this._loggingIn = true;
 
         const origRequest = this.client.request.bind(this.client);
         this.client.request = (cmd, args, evt) => {
@@ -379,6 +402,7 @@ class DiscordRichPresence {
         };
 
         this.client.on('ready', () => {
+            this._loggingIn = false;
             this.connected = true;
             this._reconnectWait = 10000;   // 붙었으니 다음 재시도 간격을 원위치
             this._switchingTo = null;
@@ -394,6 +418,7 @@ class DiscordRichPresence {
         });
 
         this.client.on('disconnected', () => {
+            this._loggingIn = false;
             this.connected = false;
             this._stopRefreshTimer();
             this._notifyStatus();
@@ -401,6 +426,7 @@ class DiscordRichPresence {
         });
 
         this.client.login({ clientId: this.clientId }).catch((err) => {
+            this._loggingIn = false;
             log.warn('[RPC] Connect failed:', err.message);
             this.connected = false;
             this._scheduleReconnect();
@@ -419,6 +445,7 @@ class DiscordRichPresence {
             } catch (e) {}
             this.client = null;
         }
+        this._loggingIn = false;
         this.connected = false;
     }
 
@@ -569,6 +596,7 @@ class DiscordRichPresence {
     _schedule(type) {
         if (this._pendingTimer) { clearTimeout(this._pendingTimer); this._pendingTimer = null; }
         this._pendingUpdate = null;
+        this._afterSwitch = null;      // 연결 전/앱 전환 중 보류된 것도 버린다 (지운 뒤 되살아나면 안 된다)
 
         const wait = this._msUntilSlot();
         if (wait <= 0) { this._flushUpdate(type); return; }   // ← 평소 경로: 0ms
@@ -679,9 +707,10 @@ class DiscordRichPresence {
             state: episodeText ? atLeast2(clamp(episodeText), siteName) : undefined,  // 4줄: 에피소드
             largeImageKey: largeImage,
             largeImageText: clamp(seriesName),
-            smallImageKey: s.isPlaying ? site.play : site.pause,
+            smallImageKey: s.isPlaying ? ((s.isLive && site.live) || site.play) : site.pause,
             smallImageText: s.isPlaying
-                ? this._t('rpc.watching', { site: siteName })       // 2줄: 사이트명
+                ? (s.isLive ? this._t('rpc.live', { site: siteName })
+                            : this._t('rpc.watching', { site: siteName }))   // 2줄: 사이트명
                 : this._t('rpc.paused', { site: siteName }),
             instance: false,
         };
@@ -691,7 +720,14 @@ class DiscordRichPresence {
 
         // 5줄: 시간바 — 재생 중일 때만 (일시정지 시 timestamps 제거)
         const timeMode = settings.timeMode || 'progress';
-        if (timeMode !== 'none' && settings.showTime !== false && s.duration > 0 && s.isPlaying) {
+        //  ⚠ 라이브는 끝이 정해져 있지 않고, currentTime 은 DVR 창 안의 위치라
+        //    경과 시간이 아니다(실측: 14시간짜리 창). 방송 시작 시각만 주고
+        //    endTimestamp 를 비우면 디스코드가 거기서부터 세어 올린다.
+        if (s.isLive && timeMode !== 'none' && settings.showTime !== false && s.isPlaying) {
+            activity.startTimestamp = s.liveStartedAt > 0
+                ? Math.floor(s.liveStartedAt / 1000)
+                : Math.floor(Date.now() / 1000) - (s.currentTime || 0);
+        } else if (timeMode !== 'none' && settings.showTime !== false && s.duration > 0 && s.isPlaying) {
             const now = Math.floor(Date.now() / 1000);
             if (timeMode === 'progress') {
                 activity.startTimestamp = now - s.currentTime;
@@ -758,7 +794,10 @@ class DiscordRichPresence {
 
     _sendNow(activity) {
         if (!this._ensureApp()) { this._afterSwitch = activity; return; }
-        if (!this.connected || !this.client) return;
+        //  아직 연결 전이면 그냥 버리지 말고 보류해 둔다. 버리면 ready 이후에도
+        //  아무도 다시 보내지 않아, 30초 리프레시가 돌 때까지 카드가 비어 있었다
+        //  (앱을 켜자마자 보고 있으면 '한참 뒤에야 뜬다'의 정체). ready 핸들러가 이걸 보낸다.
+        if (!this.connected || !this.client) { this._afterSwitch = activity; return; }
         this._lastApiCall = Date.now();
         this._spendSlot();               // 토큰 1개 소모 (한도 초과 방지)
         this._resetIdleTimer();
@@ -882,20 +921,30 @@ class DiscordRpcHub {
         const id = SITES[siteId] ? siteId : 'ttfc';
         let c = this.clients.get(id);
         if (!c) {
-            c = new DiscordRichPresence(appIdOf(id));
+            const appId = appIdOf(id);
+            if (!appId) {                    // 이 사이트의 애플리케이션 ID 를 못 구했다
+                if (!this._noAppId) this._noAppId = new Set();
+                if (!this._noAppId.has(id)) {
+                    this._noAppId.add(id);
+                    log.warn('[RPC] ' + id + ': Discord 애플리케이션 ID 가 없어 표시하지 않습니다'
+                        + ' (secrets.json 의 discordAppIds.' + id + ' 에 넣으세요)');
+                }
+                return null;
+            }
+            c = new DiscordRichPresence(appId);
             this._seedHosted(c);   // 이미 올려 둔 이미지는 다시 올리지 않게
             c.setLang(this.lang);
             if (this.idleTimeout != null) c.setIdleTimeout(this.idleTimeout);
             c.onStatusChange = () => { if (this.onStatusChange) this.onStatusChange(); };
             this.clients.set(id, c);
-            log.info(`[RPC] 사이트 클라이언트 생성: ${id} (${appIdOf(id)})`);
+            log.info(`[RPC] 사이트 클라이언트 생성: ${id} (${appId})`);
             if (this._enabled) c.connect();
         }
         return c;
     }
 
-    updateFromVideoState(s) { this._for(s && s.site).updateFromVideoState(s); }
-    updateFromNavigation(s) { this._for(s && s.site).updateFromNavigation(s); }
+    updateFromVideoState(s) { const c = this._for(s && s.site); if (c) c.updateFromVideoState(s); }
+    updateFromNavigation(s) { const c = this._for(s && s.site); if (c) c.updateFromNavigation(s); }
 
     // 사이트를 주면 그 사이트만, 안 주면 전부 지운다
     clearActivity(siteId) {
@@ -912,7 +961,11 @@ class DiscordRpcHub {
     //  활동은 올리지 않으므로 프로필에는 아무것도 안 뜬다.
     connect() {
         this._enabled = true;
-        if (this.clients.size === 0) this._for('ttfc');   // 만들면서 connect 까지 한다
+        //  ⚠ _for() 는 새로 만든 클라이언트를 그 안에서 이미 connect() 시킨다.
+        //    그래놓고 아래 루프가 같은 객체에 connect() 를 또 불러, login 이 아직 진행 중인
+        //    클라이언트를 버리고 새로 만들었다. 버려진 쪽 login 이 10초 뒤 거부되면서
+        //    **멀쩡히 붙어 있던 연결을** 끊긴 것으로 되돌렸다 (실측: 20초 재로그인·30초 재연결).
+        if (this.clients.size === 0) { this._for('ttfc'); return; }
         for (const c of this.clients.values()) c.connect();
     }
     disconnect() { this._enabled = false; for (const c of this.clients.values()) c.disconnect(); }

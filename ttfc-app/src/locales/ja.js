@@ -60,6 +60,7 @@ module.exports = {
     'rpc.viewOnSite': 'サイトで見る',
     'rpc.watching': '{site} 視聴中',
     'rpc.paused': '{site}・一時停止中',
+    'rpc.live': '{site} ライブ視聴中',
     'rpc.browsing': '閲覧中',
 
     // ── 一気見ウェブフック ──

@@ -4,7 +4,7 @@
   GitHub 최신 릴리스에서 앱과 크롬 확장을 받아 한 번에 설치한다.
 
   하는 일
-   1. 최신 릴리스 조회 (paeaenteom/ttfc_app)
+   1. 최신 릴리스 조회 (paeaenteom/tokusatsu-rpc-app)
    2. 앱 설치 프로그램 내려받아 자동 설치 (무인)
    3. 크롬 확장을 Chrome 정책(HKCU)에 등록 → 크롬 재시작 시 자동 설치
       · 관리자 권한이 필요 없다 (사용자 레지스트리만 사용)
@@ -15,7 +15,7 @@
 #>
 
 $ErrorActionPreference = 'Stop'
-$REPO    = 'paeaenteom/ttfc_app'
+$REPO    = 'paeaenteom/tokusatsu-rpc-app'
 $EXT_ID  = 'dciaobllfdcegjcdmimclgglapnhggjm'
 $UPDATE_URL = "https://github.com/$REPO/releases/latest/download/update.xml"
 $WORK    = Join-Path $env:LOCALAPPDATA 'TOKU RPC'

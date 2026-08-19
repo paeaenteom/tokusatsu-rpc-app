@@ -6,6 +6,31 @@ What changed in each version. Newest first.
 
 ---
 
+## 0.2.10 beta — 2026-08-19
+
+### New
+- **YouTube support**
+  - Video title, channel name, elapsed time, thumbnail
+  - **Shorts**
+  - **Live streams** — the timer counts up from when the broadcast started,
+    so joining midway still shows the full elapsed time
+  - **Channel pages** show that channel’s profile picture
+  - Browsing: Home, Search, Subscriptions, History, Playlist, Channel
+
+### Fixed (affects every site)
+- **Discord dropped its own connection right after startup**
+  - The first client was logged in twice; the abandoned one failed 10 seconds
+    later and tore down the healthy connection with it
+  - Measured: dropped at 10s, retried at 20s, reconnected at 30s. Now zero
+- **The card took a long time to appear when the app had just started**
+  - A state that arrived before the connection was ready was discarded, so the
+    profile stayed empty until the 30-second refresh came around
+- **Videos without a thumbnail were re-fetched every 5 seconds forever**
+  - A give-up counter existed, but the app’s recovery request reset it to zero
+    every time, so it never fired
+
+---
+
 ## 0.2.9 beta — 2026-08-18
 
 ### Fixed

@@ -10,5 +10,5 @@ rem 같은 폴더에 install.ps1 이 있으면 그것을, 없으면 최신 릴�
 if exist "%~dp0install.ps1" (
     %PS% -File "%~dp0install.ps1"
 ) else (
-    %PS% -Command "iwr 'https://github.com/paeaenteom/ttfc_app/releases/latest/download/install.ps1' -UseBasicParsing -OutFile \"$env:TEMP\toku-install.ps1\"; & \"$env:TEMP\toku-install.ps1\""
+    %PS% -Command "iwr 'https://github.com/paeaenteom/tokusatsu-rpc-app/releases/latest/download/install.ps1' -UseBasicParsing -OutFile \"$env:TEMP\toku-install.ps1\"; & \"$env:TEMP\toku-install.ps1\""
 )

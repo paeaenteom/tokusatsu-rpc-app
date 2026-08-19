@@ -8,8 +8,9 @@ Supported sites
 - Toei Tokusatsu Fan Club (TTFC) — `pc.tokusatsu-fc.jp`
 - TSUBURAYA IMAGINATION — `imagination.m-78.jp`
 - Disney+ — `www.disneyplus.com` *(experimental)*
+- YouTube — `www.youtube.com`
 
-> **beta 0.2.9** — This is something I made for myself. There may be bugs.
+> **beta 0.2.10** — This is something I made for myself. There may be bugs.
 
 ---
 

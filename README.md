@@ -8,8 +8,9 @@
 - 東映特撮ファンクラブ (TTFC) — `pc.tokusatsu-fc.jp`
 - TSUBURAYA IMAGINATION — `imagination.m-78.jp`
 - Disney+ — `www.disneyplus.com` *(실험)*
+- YouTube — `www.youtube.com`
 
-> **beta 0.2.9** — 개인용으로 만든 도구입니다. 버그가 있을 수 있어요.
+> **beta 0.2.10** — 개인용으로 만든 도구입니다. 버그가 있을 수 있어요.
 
 ---
 

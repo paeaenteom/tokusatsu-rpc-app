@@ -1,15 +1,15 @@
 {
   "manifest_version": 3,
   "name": "TOKU RPC",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "_key_설명": "확장 ID를 고정하는 공개키. 이게 있어야 자동 설치(정책)와 수동 로드가 같은 ID(dciaobllfdcegjcdmimclgglapnhggjm)를 쓴다. 서명용 개인키(.pem)는 저장소에 없으며 로컬에만 보관한다.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtdXU7Irp6ZE9BnzNdaeCLf+REWfTOkja4lWbnY8Gla2ob3uaHQWV+HPH+Su6pI7qqd3egQOQRbT3krl6TS+ijCeyCAwpVLE7dHWh9OhREQnPgaO9lVc9S4QgW46B3320KL/S3mV29R5vCRhtTi2HAqbg4QWSQbTh8j4gmW2kh8btvswv54I51TjBhiyy5UhCahquGSK3HI7c9MwG6c7bblz2x8SAPXA05M9I4PREc00UUVhlK1uzc0HmDbW0/afrHwgUgTTGVJmUedDi/sk56AnWQXqvU47evm1lg/GEF9wKhMEK51BC0d84oVnCta3hld5GLF8AGF/MLS/QrKkQ6QIDAQAB",
-  "description": "特撮配信サイト（東映特撮ファンクラブ・TSUBURAYA IMAGINATION）と Disney+ の視聴情報を Discord に表示します",
+  "description": "特撮配信サイト（東映特撮ファンクラブ・TSUBURAYA IMAGINATION）と Disney+・YouTube の視聴情報を Discord に表示します",
   "permissions": [
     "alarms",
     "storage"
   ],
-  "_host_permissions_설명": "뒤쪽 4개는 각 사이트의 이미지 CDN. 서비스 워커가 썸네일을 받아 정사각으로 만들려면 필요하다(페이지 오리진에선 CORS로 막힘). 페이지가 이미 보여주고 있는 이미지 URL 에만 요청한다. cloudfront 를 특정 배포로 좁히지 않는 이유: TTFC 가 배포를 옮기면 썸네일이 조용히 잘린 채로 돌아가기 때문이다.",
+  "_host_permissions_설명": "사이트 도메인 3개 + 각 사이트의 이미지 CDN. 서비스 워커가 썸네일을 받아 정사각으로 만들려면 필요하다(페이지 오리진에선 CORS 로 막힘). 페이지가 이미 보여주고 있는 이미지 URL 에만 요청한다. cloudfront 를 특정 배포로 좁히지 않는 이유: TTFC 가 배포를 옮기면 썸네일이 조용히 잘린 채로 돌아가기 때문이다.",
   "host_permissions": [
     "https://pc.tokusatsu-fc.jp/*",
     "https://imagination.m-78.jp/*",
@@ -17,7 +17,10 @@
     "https://*.cloudfront.net/*",
     "https://*.m-78.jp/*",
     "https://*.bamgrid.com/*",
-    "https://*.disney-plus.net/*"
+    "https://*.disney-plus.net/*",
+    "https://www.youtube.com/*",
+    "https://i.ytimg.com/*",
+    "https://yt3.googleusercontent.com/*"
   ],
   "content_scripts": [
     {
@@ -71,6 +74,20 @@
         "content.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.youtube.com/*"
+      ],
+      "js": [
+        "locales/ko.js",
+        "locales/en.js",
+        "locales/ja.js",
+        "i18n.js",
+        "extractors/youtube-extract.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
     }
   ],
   "background": {
@@ -89,5 +106,5 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "version_name": "0.2.9 beta"
+  "version_name": "0.2.10 beta"
 }

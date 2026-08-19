@@ -60,6 +60,7 @@ module.exports = {
     'rpc.viewOnSite': 'View on site',
     'rpc.watching': 'Watching {site}',
     'rpc.paused': '{site}・Paused',
+    'rpc.live': 'Watching {site} live',
     'rpc.browsing': 'Browsing',
 
     // ── Binge webhook ──

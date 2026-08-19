@@ -48,6 +48,7 @@ function load() {
     }
     if (process.env.TOKU_APPID_TTFC) merged.discordAppIds.ttfc = process.env.TOKU_APPID_TTFC;
     if (process.env.TOKU_APPID_IMAGINATION) merged.discordAppIds.imagination = process.env.TOKU_APPID_IMAGINATION;
+    if (process.env.TOKU_APPID_YOUTUBE) merged.discordAppIds.youtube = process.env.TOKU_APPID_YOUTUBE;
     if (process.env.TOKU_BINGE_WEBHOOK) merged.bingeWebhookUrl = process.env.TOKU_BINGE_WEBHOOK;
 
     cache = merged;
