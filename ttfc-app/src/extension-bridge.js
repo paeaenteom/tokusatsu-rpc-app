@@ -191,7 +191,7 @@ class ExtensionBridge {
             const logKey = [msg.site, msg.seriesName, msg.episodeNumber, msg.episodeTitle, msg.isPlaying].join('|');
             if (logKey !== this._videoLogKeys.get(msg.site)) {
                 this._videoLogKeys.set(msg.site, logKey);
-                log.info(`[Bridge] VIDEO ← ${msg.site || 'ttfc'} | ${msg.seriesName} ${msg.episodeNumber || ''} ${msg.episodeTitle || ''} (${msg.currentTime || 0}/${msg.duration || 0}s ${msg.isPlaying ? '▶' : '⏸'})`);
+                log.info(`[Bridge] VIDEO ← ${msg.site || 'ttfc'} | ${msg.seriesName} ${msg.episodeNumber || ''} ${msg.episodeTitle || ''} (${msg.currentTime || 0}/${msg.duration || 0}s ${msg.isPlaying ? '▶' : '⏸'})${msg.startedAtMs ? ' ⚓' : ''}`);
             }
             this._requestThumbIfNeeded(msg.thumbnail, ws);
             // 정주행 기록 (binge 플래그가 켜진 상태에서 에피소드 변경 시 웹훅)
@@ -220,6 +220,7 @@ class ExtensionBridge {
                 pageUrl: msg.url || '',
                 isLive: !!msg.isLive,
                 liveStartedAt: msg.liveStartedAt || 0,
+                startedAtMs: msg.startedAtMs || 0,
                 _settings: settings,
             });
             return;

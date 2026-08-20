@@ -1,8 +1,8 @@
-Adds YouTube support (videos, Shorts, live streams, channels) and fixes Discord dropping its own connection on every startup.
+Adds YouTube support (videos, Shorts, live streams, channels). Titles and channel names appear much sooner, and the progress bar is accurate.
 
 ## Install
 
-Just grab **`TOKU-RPC-Setup-0.2.10-beta.exe`** below and run it — that one file is all you need.
+Just grab **`TOKU-RPC-Setup-0.3.0-beta.exe`** below and run it — that one file is all you need.
 The app and the browser extension are installed in one go. There's nothing else to download.
 
 - In the installer window, just **check off the browsers you want the extension in**
@@ -11,6 +11,36 @@ The app and the browser extension are installed in one go. There's nothing else 
   (That's because Windows only lets admins write to the extension policy key. The app itself installs to your own user folder)
 - After installing, **quit your browser completely and start it again**
   (Make sure it's not still running in the system tray, or the extension won't take effect)
+
+## What's new in 0.3.0
+
+### Speed
+- **Title and channel name appear much sooner** (YouTube)
+  - Asks the player directly instead of waiting for the page.
+    Measured: **340ms** after navigating (the page takes 1.1–2.5s)
+  - The previous video’s title and channel no longer flash for a moment
+- **Play and pause register instantly** — measured **32ms** on average
+
+### Timeline accuracy
+- The progress bar’s anchor is computed **at the moment the page is read**.
+  It used to lose the fraction and add transfer delay, shifting on every refresh
+- Total length was one second longer than the real one; fixed
+- No anchor is set while buffering (that made the card run ahead)
+
+> The remaining **±1 second** cannot be removed — Discord only accepts
+> whole-second timestamps, so card and player tick on different clocks.
+
+### Fixed
+- Elapsed time froze at its first value, so the bar kept resetting
+- Unhandled errors were logged when the connection closed
+- Channel name appeared twice on channel pages
+- The title briefly read "YouTube" right after navigating
+
+### Good to know
+- One script now runs **in the same space as the page** to read YouTube playback.
+  It only asks the player for position and title; it does not modify the page (Disney+ works the same way)
+- **0.2.10 was never published.** Coming from 0.2.9 you also receive its changes below
+  (YouTube support, Discord connection stability)
 
 ## What's new in 0.2.10
 
@@ -232,7 +262,7 @@ Per-version history is in the [CHANGELOG](https://github.com/paeaenteom/tokusats
 
 | File | What it is |
 |---|---|
-| `TOKU-RPC-Setup-0.2.10-beta.exe` | **This is the only one you need** (app bundled inside) |
+| `TOKU-RPC-Setup-0.3.0-beta.exe` | **This is the only one you need** (app bundled inside) |
 | `toku-rpc-extension.crx`, `update.xml` | For automatic extension installation and updates — the browser fetches these on its own |
 | `toku-rpc-extension.zip` | For installing the extension manually (only if the automatic install is blocked) |
 | `TOKU-RPC-<version>-portable.zip` | No-install archive (use if antivirus blocks the exe above) |

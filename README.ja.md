@@ -10,7 +10,7 @@
 - Disney+ — `www.disneyplus.com` *(実験)*
 - YouTube — `www.youtube.com`
 
-> **beta 0.2.10** — 個人用に作ったツールです。バグがあるかもしれません。
+> **beta 0.3.0** — 個人用に作ったツールです。バグがあるかもしれません。
 
 ---
 

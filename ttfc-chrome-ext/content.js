@@ -478,6 +478,24 @@
     const pb = (typeof SITE.getPlayback === 'function') ? SITE.getPlayback() : null;
     const timeOf = (k, fallback) => (pb ? Math.floor(pb[k] || 0) : fallback);
 
+    //  진행 바 기준점: "이 영상의 0초가 몇 시각이었나".
+    //  추출기가 준 게 있으면 그걸 쓰고, 없으면 <video> 의 소수점 위치로 지금 계산한다.
+    //  ⚠ 아무 <video> 나 믿지 않는다 — 추출기가 알려준 길이와 맞을 때만 쓴다
+    //    (미리보기 플레이어 등 다른 요소를 집으면 시간이 엉뚱해진다).
+    function anchorMs() {
+      if (pb && pb.startedAtMs) return pb.startedAtMs;
+      if (!hasRealVideo || !isFinite(video.currentTime)) return 0;
+      //  아직 재생할 데이터가 없으면 위치가 흐르지 않는다 → 기준점을 만들지 않는다
+      //  (그 상태로 잡으면 실제 재생 시작이 늦은 만큼 카드가 앞선다)
+      if (video.readyState < 3) return 0;
+      //  추출기가 자체 재생정보를 주는 사이트(디즈니+ 등)는 <video> 가 같은 콘텐츠인지
+      //  확인될 때만 쓴다. 디즈니+ 는 duration 이 Infinity 라 확인이 불가능하므로
+      //  기준점을 만들지 않고 앱의 기존 방식에 맡긴다 (동작 변화 없음).
+      if (pb && !(pb.duration > 0 && isFinite(video.duration)
+          && Math.abs(video.duration - pb.duration) <= 2)) return 0;
+      return Date.now() - Math.round(video.currentTime * 1000);
+    }
+
     // 영상 페이지 URL이면 video 로드 전이라도 '시청 중'으로 표시
     //  → 들어가는 순간 작품/에피소드 정보(og:title 기반)가 뜨고,
     //    실제로 재생하면 시간바 + 재생상태가 채워진다.
@@ -499,6 +517,9 @@
         // video가 로드돼 실제 재생 중일 때만 재생 상태 true
         isPlaying: pb ? !!pb.isPlaying : (hasRealVideo && !video.paused && !video.ended),
         loaded: pb ? !!pb.loaded : hasRealVideo,
+        // 진행 바 기준점 — 모든 사이트 공통. 앱이 '지금 - 받은 초' 로 만들면
+        //  소수점 버림 + 전송 지연이 그대로 오차가 된다 (실측: 카드가 1초 앞섰다).
+        startedAtMs: anchorMs(),
         binge: bingeMode,
         url: location.href,
         // 라이브 (추출기가 안 주면 undefined → false/0. 다른 사이트는 영향 없다)
@@ -529,6 +550,9 @@
 
   // ── 전송 ──
   function sendUpdate(force) {
+    //  추출기가 "아직 이 영상 정보를 못 믿는다" 고 하면 보내지 않는다.
+    //  (SPA 이동 직후 DOM 에 이전 영상 값이 남아, 이전 제목·채널이 카드로 나갔다)
+    if (typeof SITE.isReady === 'function' && SITE.isPlaybackUrl() && !SITE.isReady()) return;
     const state = collectState();
     const stateStr = JSON.stringify(state);
     const now = Date.now();
@@ -645,6 +669,9 @@
     bingeMoving = false;
     bingeOverlaySeen = false;
     sendUpdate(true);
+    //  YouTube 는 플레이어 제목이 ~235ms 에 먼저 바뀌고 h1/document.title 은 1~2.5초 뒤다.
+    //  그 사이를 한 번 더 집는다 (내용이 그대로면 앱이 변경 감지에서 걸러낸다).
+    setTimeout(() => sendUpdate(true), 300);
     setTimeout(() => sendUpdate(true), 600);
     if (bingeMode) setTimeout(bingeStatusBadge, 900);  // 새 페이지에서도 상태 보이게
   }

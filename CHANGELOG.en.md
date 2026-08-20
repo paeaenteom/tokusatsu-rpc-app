@@ -6,6 +6,47 @@ What changed in each version. Newest first.
 
 ---
 
+## 0.3.0 beta — 2026-08-21
+
+### Speed
+- **Title and channel name appear much sooner** (YouTube)
+  - Asks the player directly instead of waiting for the page to update.
+    Measured: **340ms** after navigating (the page itself takes 1.1–2.5s)
+  - The previous video’s title and channel no longer flash for a moment.
+    Nothing is sent until the current video is known for certain
+- **Play and pause register instantly** — measured **32ms** on average (with speed priority on)
+
+### Timeline accuracy
+- The progress bar’s anchor is now computed **at the moment the page is read**
+  - The app used to build it from "now − seconds received", losing the fraction and
+    adding transfer delay, so the position shifted on every refresh.
+    Applies to TTFC, IMAGINATION and YouTube
+- Total length was one second longer than the real one; fixed
+- No anchor is set while the video cannot play yet (buffering). Setting one there made
+  the card run ahead by however long playback took to actually start
+
+> The remaining **±1 second** cannot be removed. Discord only accepts whole-second
+> timestamps, so the card ticks on clock seconds while the player ticks on video
+> seconds. They disagree for part of every second (the current setting matches best).
+
+### Fixed
+- **Elapsed time froze at its first value**, so the progress bar kept resetting
+- **Unhandled errors were logged** when the connection closed (two places)
+- **Channel name appeared twice** on channel pages
+- The title briefly read **"YouTube"** right after navigating
+
+### Also
+- Added a diagnostic line: logged when the progress bar differs from the real position by over 2s
+
+### Good to know
+- One script now runs **in the same space as the page** to read YouTube playback
+  (`extractors/youtube-main.js`). It only asks the player for position and title;
+  it does not modify the page. Disney+ already works the same way
+- **0.2.10 was never published.** Coming from 0.2.9 you also receive its changes
+  (YouTube support, Discord connection stability) listed below
+
+---
+
 ## 0.2.10 beta — 2026-08-19
 
 ### New

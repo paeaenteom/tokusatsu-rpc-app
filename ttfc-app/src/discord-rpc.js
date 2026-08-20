@@ -264,6 +264,7 @@ class DiscordRichPresence {
 
         this.currentState = {
             isWatching: false,
+            startedAtMs: 0,
             isLive: false,
             liveStartedAt: 0,
             isPlaying: false,
@@ -730,10 +731,28 @@ class DiscordRichPresence {
         } else if (timeMode !== 'none' && settings.showTime !== false && s.duration > 0 && s.isPlaying) {
             const now = Math.floor(Date.now() / 1000);
             if (timeMode === 'progress') {
-                activity.startTimestamp = now - s.currentTime;
+                //  확장이 읽는 순간 계산해 준 기준점이 있으면 그걸 쓴다.
+                //  여기서 '지금 - 받은 초' 로 다시 만들면 전송 지연만큼 어긋나고,
+                //  갱신마다 값이 달라져 진행 바가 흔들린다.
+                activity.startTimestamp = s.startedAtMs > 0
+                    ? Math.round(s.startedAtMs / 1000)
+                    : now - s.currentTime;
                 activity.endTimestamp = activity.startTimestamp + s.duration;
             } else if (timeMode === 'remaining') {
                 activity.endTimestamp = now + (s.duration - s.currentTime);
+            }
+        }
+
+        //  진단: 카드가 표시할 위치와 확장이 알려준 실제 위치가 크게 다르면 기록한다.
+        //  기준점이 밀리는 종류의 버그를 실사용 로그에서 바로 잡아내기 위한 것.
+        //  ⚠ 라이브는 제외한다. 라이브의 기준점은 '방송 시작 시각' 이고 currentTime 은
+        //    DVR 창 안의 위치라 둘이 원래 크게 다르다 (실측 예: 방송 69일째 vs 창 안 13시간).
+        //    제외하지 않으면 라이브를 볼 때마다 이 경고가 계속 찍힌다.
+        if (activity.startTimestamp && s.duration > 0 && !s.isLive) {
+            const shown = Math.floor(Date.now() / 1000) - activity.startTimestamp;
+            if (Math.abs(shown - s.currentTime) > 2) {
+                log.warn('[RPC] 진행 바 어긋남: 카드 ' + shown + 's vs 실제 ' + s.currentTime
+                    + 's (기준점 ' + (s.startedAtMs ? '있음' : '없음') + ')');
             }
         }
 
@@ -827,7 +846,10 @@ class DiscordRichPresence {
         this._idleTimer = setTimeout(() => {
             log.info(`[RPC] ${Math.round(this._IDLE_TIMEOUT / 60000)}분 비활동 → Activity 제거`);
             this._stopRefreshTimer();
-            try { if (this.client) this.client.clearActivity(); } catch (e) {}
+            //  ⚠ clearActivity 는 Promise 다. 동기 try/catch 로는 거부를 못 잡아,
+            //    연결이 닫히는 순간 라이브러리가 대기 중인 요청을 전부 reject 하면서
+            //    unhandledRejection('connection closed') 으로 샜다.
+            try { const p = this.client && this.client.clearActivity(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
             this.lastActivity = null;
             this._shownType = null;   // 내려갔으니 같은 페이지라도 다시 올릴 수 있어야 한다
             // _lastBrowsingKey는 유지 — 동일 페이지 하트비트로 되살아나지 않게
@@ -859,7 +881,8 @@ class DiscordRichPresence {
         // (일시정지 중이면 currentTime 도 안 늘어 영영 복구되지 않았다)
         this._lastSent = { episode: '', playing: null, currentTime: 0, duration: 0 };
         if (this.connected && this.client) {
-            try { this.client.clearActivity(); } catch (e) {}
+            //  ⚠ 위와 같은 이유로 반드시 .catch 를 단다 (연결이 막 닫혔을 때 거부된다)
+            try { const p = this.client.clearActivity(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
         }
         this.lastActivity = null;
         this._lastBrowsingKey = '';
