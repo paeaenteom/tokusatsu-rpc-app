@@ -10,7 +10,7 @@
 //   - ttfc:// 프로토콜 (가챠 연동)
 // ============================================================
 
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, Notification, crashReporter } = require('electron');
 const path = require('path');
 const { execFile } = require('child_process');
 const log = require('electron-log');
@@ -38,6 +38,15 @@ appConsole.hookAll();
 
 log.info('=== TOKU RPC 시작 ===');
 
+//  ⚠ 앱이 아무 기록 없이 사라지는 일이 있었다(2026-08-21 13:41). uncaughtException 은
+//    후킹돼 있어 잡히고, Windows 이벤트 로그에도 APPCRASH 가 없었다 — 즉 네이티브 쪽에서
+//    조용히 죽은 것으로 보인다. 덤프를 로컬에 남겨 다음에는 원인을 볼 수 있게 한다.
+//    (uploadToServer:false — 밖으로 아무것도 보내지 않는다)
+try {
+    crashReporter.start({ productName: 'TOKU RPC', companyName: 'paeaenteom',
+        submitURL: '', uploadToServer: false, compress: false });
+} catch (e) { log.warn('[Crash] 덤프 설정 실패:', e.message); }
+
 // 미니 창은 400×780 짜리 정적 다크 패널이다. GPU 가속으로 얻을 게 없는데
 // 창을 안 열어도 gpu-process 가 70MB 를 잡고 있었다(실측). 끄면 그만큼 돌려받는다.
 // ⚠ app.whenReady() 전에 불러야 효과가 있다.
@@ -61,6 +70,16 @@ const store = new Store({
             showThumbnail: true,
             showButtons: true,
             timeMode: 'progress',   // progress | remaining | none
+            //  디스코드는 활동 종류마다 카드를 다르게 그린다.
+            //   3 Watching  "…시청 중"   · 프로필 활동 탭에서 진행 바
+            //   2 Listening "…듣는 중"   · 멤버 목록 마우스오버에도 이미지+제목 블록이 뜬다
+            //   0 Playing   "…플레이 중" · 진행 바 대신 남은 시간 카운트다운
+            activityType: 3,
+            //  멤버 목록(프로필 아래)에 어느 줄을 보여줄지 — 사이트마다 따로 고른다.
+            //   2 작품명(details) · 1 에피소드(state) · 0 앱 이름
+            //  ⚠ electron-store 는 이미 저장된 중첩 객체에 새 키를 채워 넣지 않는다.
+            //    그래서 읽는 쪽에서 없으면 2 로 보도록 처리한다(statusDisplayOf).
+            statusDisplay: { ttfc: 2, imagination: 2, disneyplus: 2, youtube: 2 },
             idleTimeout: 5,         // 자동 해제까지 분 (0 = 안 사라짐)
         },
         lang: 'auto',               // auto | ko | en | ja
@@ -115,6 +134,8 @@ function rpcSettings() {
         showEpisode: store.get('rpc.showEpisode'),
         showThumbnail: store.get('rpc.showThumbnail'),
         showButtons: store.get('rpc.showButtons'),
+        activityType: store.get('rpc.activityType'),
+        statusDisplay: store.get('rpc.statusDisplay') || {},
     };
 }
 
@@ -405,6 +426,10 @@ ipcMain.handle('rpc-get-settings', () => ({
     showThumbnail: store.get('rpc.showThumbnail'),
     showButtons: store.get('rpc.showButtons'),
     timeMode: store.get('rpc.timeMode'),
+    //  ⚠ 여기서 빠뜨리면 미니 창을 열 때마다 드롭다운이 기본값으로 보인다
+    //    (저장은 됐는데 화면만 초기화된 것처럼 보이는 버그).
+    activityType: store.get('rpc.activityType'),
+    statusDisplay: store.get('rpc.statusDisplay') || {},
     idleTimeout: idleMinutes(),
     version: app.getVersion(),
     lang: store.get('lang'),          // 설정값 그대로 ('auto' 포함)
@@ -468,9 +493,13 @@ ipcMain.handle('i18n-set', (e, setting) => {
 });
 
 ipcMain.handle('rpc-set-setting', (e, key, value) => {
-    const allowed = ['showSeries', 'showEpisode', 'showThumbnail', 'showButtons', 'timeMode'];
+    const allowed = ['showSeries', 'showEpisode', 'showThumbnail', 'showButtons', 'timeMode', 'activityType'];
+    //  사이트별 값은 'statusDisplay.ttfc' 처럼 점 표기로 온다
+    if (key.indexOf('statusDisplay.') === 0) store.set('rpc.' + key, Number(value));
     if (allowed.includes(key)) {
         store.set('rpc.' + key, value);
+        //  저장만 하면 다음에 뭔가 바뀔 때까지 카드가 그대로다. 지금 바로 다시 그린다.
+        if (discordRPC) discordRPC.applySettings(rpcSettings());
     }
     // 자동 해제 시간은 저장만 하는 게 아니라 지금 돌고 있는 타이머에도 바로 먹여야 한다
     if (key === 'idleTimeout') {
@@ -494,6 +523,7 @@ ipcMain.handle('console-clear', () => { appConsole.clear(); return true; });
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
+    log.info('[Shutdown] 이미 실행 중인 인스턴스가 있어 이번 프로세스는 종료합니다');
     app.quit();
 } else {
     app.on('second-instance', (event, argv) => {
@@ -582,10 +612,27 @@ if (!gotLock) {
 }
 
 app.on('before-quit', () => {
+    log.info('[Shutdown] before-quit — 정상 종료 절차 시작');
     app.isQuitting = true;
     if (discordRPC) discordRPC.disconnect();
     if (extensionBridge) extensionBridge.stop();
 });
+app.on('will-quit', () => log.info('[Shutdown] will-quit'));
+app.on('quit', (e, code) => log.info('[Shutdown] quit (코드 ' + code + ')'));
+
+//  자식 프로세스가 죽으면 앱 전체가 사라진 것처럼 보인다. 무엇이 죽었는지 남긴다.
+app.on('render-process-gone', (e, wc, details) => {
+    log.error('[Crash] 렌더러 종료:', details && details.reason, '/ exitCode', details && details.exitCode);
+});
+app.on('child-process-gone', (e, details) => {
+    log.error('[Crash] 자식 프로세스 종료:', details && details.type,
+        '/', details && details.reason, '/ exitCode', details && details.exitCode);
+});
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    try { process.on(sig, () => { log.warn('[Shutdown] 신호 수신:', sig); app.isQuitting = true; app.quit(); }); }
+    catch (e) { /* 무시 */ }
+}
+process.on('exit', (code) => log.info('[Shutdown] process exit (코드 ' + code + ')'));
 
 // 트레이 앱이므로 창 다 닫혀도 종료 안 함
 app.on('window-all-closed', () => {

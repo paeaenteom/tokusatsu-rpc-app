@@ -10,7 +10,7 @@ Supported sites
 - Disney+ — `www.disneyplus.com` *(experimental)*
 - YouTube — `www.youtube.com`
 
-> **beta 0.3.0** — This is something I made for myself. There may be bugs.
+> **beta 0.3.1** — This is something I made for myself. There may be bugs.
 
 ---
 

@@ -129,6 +129,24 @@ function atLeast2(str, pad) {
     return suffix ? `${s} · ${suffix}` : `${s} `.padEnd(2, ' ');
 }
 
+//  활동 종류 — 디스코드가 종류마다 카드를 다르게 그린다(실측).
+//   3 Watching  프로필 활동 탭에서 큰 이미지 + 진행 바. 멤버 목록 마우스오버는 한 줄
+//   2 Listening 마우스오버에도 이미지+제목 블록이 뜨고 진행 바도 나온다(스포티파이와 같은 취급)
+//   0 Playing   진행 바 대신 '남은 시간' 카운트다운으로 그려진다
+//  멤버 목록(프로필 아래)에 보일 줄. 사이트마다 다르게 고를 수 있다.
+//   2 작품명(details) · 1 에피소드(state) · 0 앱 이름
+//  저장된 값이 없으면 2 — electron-store 가 중첩 객체에 새 키를 안 채우기 때문이다.
+function statusDisplayOf(siteId, settings) {
+    const map = (settings && settings.statusDisplay) || {};
+    const n = Number(map[siteId]);
+    return (n === 0 || n === 1 || n === 2) ? n : 2;
+}
+
+function activityTypeOf(settings) {
+    const n = Number(settings && settings.activityType);
+    return (n === 0 || n === 2 || n === 3) ? n : 3;
+}
+
 function isHttpUrl(u) {
     return typeof u === 'string' && /^https?:\/\//i.test(u);
 }
@@ -396,8 +414,15 @@ class DiscordRichPresence {
         const origRequest = this.client.request.bind(this.client);
         this.client.request = (cmd, args, evt) => {
             if (cmd === 'SET_ACTIVITY' && args && args.activity) {
-                args.activity.type = 3;  // Watching (시청 중)
-                args.activity.status_display_type = 2;  // 멤버 목록에 details(작품명) 표시
+                //  ⚠ discord-rpc 라이브러리의 setActivity() 는 페이로드를 자기가 아는
+                //    필드(state/details/timestamps/assets/…)로만 새로 만든다. 우리가
+                //    activity 객체에 넣은 type·status_display_type 은 여기 오기 전에
+                //    **버려진다**. 그래서 "없으면 기본값" 방식은 설정을 무력화했다 —
+                //    사용자가 뭘 골라도 항상 3/2 가 나갔다 (실측: 응답이 늘 2).
+                //    → _sendNow 가 보내려는 값을 _actMeta 에 실어 두고 여기서 얹는다.
+                const meta = this._actMeta || {};
+                args.activity.type = meta.type !== undefined ? meta.type : 3;
+                args.activity.status_display_type = meta.sdt !== undefined ? meta.sdt : 2;
             }
             return origRequest(cmd, args, evt);
         };
@@ -409,11 +434,17 @@ class DiscordRichPresence {
             this._switchingTo = null;
             log.info('[RPC] Connected:', this.client.user?.username);
             this._notifyStatus();
-            // 앱 전환 중 보류된 액티비티가 있으면 지금 보낸다
+            // 앱 전환·연결 대기 중 보류된 액티비티가 있으면 지금 보낸다.
+            //  ⚠ 여기서 값을 미리 꺼내 두면 안 된다. 그 사이 CLEAR 가 오면 취소돼야 하는데,
+            //    미리 꺼내면 취소할 방법이 없어 **지운 카드가 300ms 뒤 되살아난다**
+            //    (실측: CLEAR 수신 로그가 있는데도 유튜브·디즈니+ 카드가 남아 있었다).
+            //    타임아웃 안에서 다시 읽으면 clearActivity 가 null 로 만든 걸 존중한다.
             if (this._afterSwitch) {
-                const a = this._afterSwitch;
-                this._afterSwitch = null;
-                setTimeout(() => this._sendNow(a), 300);
+                setTimeout(() => {
+                    const a = this._afterSwitch;
+                    this._afterSwitch = null;
+                    if (a && this.connected) this._sendNow(a);
+                }, 300);
             }
             // 초기 placeholder는 보내지 않음 — 사이트를 실제로 볼 때만 표시
         });
@@ -491,8 +522,12 @@ class DiscordRichPresence {
         const firstWatch = this._lastSent.playing === null;
         // 썸네일은 비동기 재호스팅(IMAGINATION)으로 나중에 채워질 수 있음 → 변경 감지에 포함
         const thumbChanged = (s.thumbnail || '') !== (this._lastSent.thumbnail || '');
+        //  라이브 여부는 늦게 확정될 수 있다(플레이어가 처음엔 모른다). 감지에 넣지 않으면
+        //  처음의 '라이브 아님' 이 굳어 카드가 계속 진행 바로 남는다 (실측: VCT 라이브).
+        const liveChanged = !!s.isLive !== !!this._lastSent.isLive;
 
-        if (!playChanged && !episodeChanged && !seeked && !durationLoaded && !firstWatch && !thumbChanged) {
+        if (!playChanged && !episodeChanged && !seeked && !durationLoaded && !firstWatch
+            && !thumbChanged && !liveChanged) {
             // 재생 중 자연 경과 — _lastSent.currentTime만 따라가게 갱신
             this._lastSent.currentTime = s.currentTime;
             return;
@@ -503,6 +538,7 @@ class DiscordRichPresence {
         this._lastSent.currentTime = s.currentTime;
         this._lastSent.duration = s.duration;
         this._lastSent.thumbnail = s.thumbnail || '';
+        this._lastSent.isLive = !!s.isLive;
 
         // 여기 도달 = 변경 이벤트(재생상태/에피소드/탐색/로드/썸네일) → 전부 즉시 반영
         // (_forceUpdate의 500ms 연타 가드가 rate limit 보호)
@@ -669,11 +705,37 @@ class DiscordRichPresence {
 
     _t(key, vars) { return i18n.t(this.lang, key, vars); }
 
+    //  지금 프로필에 떠 있어야 할 카드 종류. _forceUpdate() 에 인자를 빼면
+    //  _flushUpdate 가 무조건 '브라우징' 으로 그려, 시청 중인데 둘러보기 카드가 뜬다.
+    _currentType() {
+        return this.currentState.isWatching ? 'watching' : 'browsing';
+    }
+
     // 언어가 바뀌면 지금 떠 있는 표시도 바로 갈아끼운다
     setLang(lang) {
         if (lang === this.lang) return;
         this.lang = lang;
-        if (this.connected && this.currentState.isWatching !== undefined) this._forceUpdate();
+        if (this.connected && this.currentState.isWatching !== undefined) this._forceUpdate(this._currentType());
+    }
+
+    //  표시 설정(활동 종류·시간 표시·작품명 표시 등)이 바뀌면 지금 카드를 바로 다시 그린다.
+    //  예전에는 저장만 해서, 다음에 뭔가 바뀌거나 30초 갱신이 돌 때까지 아무 일도 없었다.
+    applySettings(settings) {
+        this.currentState._settings = settings || {};
+        if (!this.connected || this.currentState.isWatching === undefined) return;
+        //  ⚠ 디스코드는 이미 떠 있는 활동을 갱신할 때 일부 필드(status_display_type 등)를
+        //    무시하는 것으로 보인다(응답이 항상 2). 지웠다가 새로 올리면 활동이 새로
+        //    등록되므로 그 필드도 반영될 여지가 있다. 잠깐 비었다가 바로 다시 뜬다.
+        try {
+            const p = this.client && this.client.clearActivity();
+            if (p && p.catch) p.catch(() => {});
+        } catch (e) { /* 무시 */ }
+        this.lastActivity = null;
+        this._lastBrowsingKey = '';
+        this._shownType = null;
+        setTimeout(() => {
+            if (this.connected) this._forceUpdate(this._currentType());
+        }, 250);
     }
 
     _buildAndSendWatching() {
@@ -708,6 +770,8 @@ class DiscordRichPresence {
             state: episodeText ? atLeast2(clamp(episodeText), siteName) : undefined,  // 4줄: 에피소드
             largeImageKey: largeImage,
             largeImageText: clamp(seriesName),
+            type: activityTypeOf(settings),
+            status_display_type: statusDisplayOf(s.site, settings),
             smallImageKey: s.isPlaying ? ((s.isLive && site.live) || site.play) : site.pause,
             smallImageText: s.isPlaying
                 ? (s.isLive ? this._t('rpc.live', { site: siteName })
@@ -779,6 +843,8 @@ class DiscordRichPresence {
 
         // 브라우징 중엔 작은 이미지(play/pause) 없음 — 영상 시청 시에만 표시 (유빈 요청)
         const activity = {
+            type: activityTypeOf(settings),
+            status_display_type: statusDisplayOf(s.site, settings),
             details: clamp(details),
             state,
             largeImageKey: largeImage,
@@ -829,8 +895,25 @@ class DiscordRichPresence {
         try {
             // setActivity는 Promise 반환 — 미처리 시 unhandledRejection으로 터진다
             // (Discord 재시작·rate limit 때 'Unknown Error'가 로그를 도배했음)
+            //  라이브러리가 페이로드에서 버리는 필드를 인터셉터로 전달한다 (위 주석 참고)
+            this._actMeta = { type: activity.type, sdt: activity.status_display_type };
             const p = this.client.setActivity(activity);
             if (p && typeof p.catch === 'function') {
+                //  ⚠ 디스코드가 실제로 무엇을 받아들였는지 응답으로 확인한다.
+                //    type / status_display_type 은 라이브러리가 만드는 필드가 아니라
+                //    우리가 request 를 가로채 얹는 것이라, 디스코드가 무시할 수도 있다.
+                //    보낸 값이 바뀔 때만 한 줄 남긴다(로그 도배 방지).
+                const want = activity.type + '/' + activity.status_display_type;
+                if (want !== this._lastTypeLog) {
+                    this._lastTypeLog = want;
+                    p.then((res) => {
+                        const got = res && res.activity ? res.activity : res;
+                        log.info('[RPC] 활동 종류 보냄 type=' + activity.type
+                            + ' status_display_type=' + activity.status_display_type
+                            + ' → 디스코드 응답 type=' + (got && got.type)
+                            + ' status_display_type=' + (got && got.status_display_type));
+                    }).catch(() => {});
+                }
                 p.catch((err) => log.warn('[RPC] setActivity 거부:', err && err.message));
             }
             this.lastActivity = activity;
@@ -875,6 +958,9 @@ class DiscordRichPresence {
         // clear 이후 stale activity를 재전송하지 못하게 상태까지 리셋
         if (this._pendingTimer) { clearTimeout(this._pendingTimer); this._pendingTimer = null; }
         this._pendingUpdate = null;
+        //  연결 전에 보류해 둔 카드도 함께 버린다. 안 그러면 연결되는 순간
+        //  방금 지운 상태가 되살아난다 (유령 프레즌스).
+        this._afterSwitch = null;
         this.currentState.isWatching = false;
         // _lastSent 도 비운다 — 안 그러면 지운 뒤 똑같은 상태가 다시 와도
         // 변경 감지에서 "바뀐 게 없다"고 걸러져 프레즌스가 안 돌아온다
@@ -994,6 +1080,9 @@ class DiscordRpcHub {
     disconnect() { this._enabled = false; for (const c of this.clients.values()) c.disconnect(); }
 
     setLang(lang) { this.lang = lang; for (const c of this.clients.values()) c.setLang(lang); }
+
+    // 표시 설정 변경을 지금 떠 있는 모든 카드에 즉시 반영한다
+    applySettings(settings) { for (const c of this.clients.values()) c.applySettings(settings); }
 
     // 자동 해제 시간 — 나중에 생기는 클라이언트에도 같은 값이 가도록 기억해 둔다
     setIdleTimeout(ms) {

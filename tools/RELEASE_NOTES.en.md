@@ -1,8 +1,8 @@
-Adds YouTube support (videos, Shorts, live streams, channels). Titles and channel names appear much sooner, and the progress bar is accurate.
+You can now choose how it looks (activity type, member list line). Fixes settings that had no effect, and live streams not being recognised.
 
 ## Install
 
-Just grab **`TOKU-RPC-Setup-0.3.0-beta.exe`** below and run it — that one file is all you need.
+Just grab **`TOKU-RPC-Setup-0.3.1-beta.exe`** below and run it — that one file is all you need.
 The app and the browser extension are installed in one go. There's nothing else to download.
 
 - In the installer window, just **check off the browsers you want the extension in**
@@ -12,6 +12,32 @@ The app and the browser extension are installed in one go. There's nothing else 
 - After installing, **quit your browser completely and start it again**
   (Make sure it's not still running in the system tray, or the extension won't take effect)
 
+## What's new in 0.3.1
+
+### You can choose how it looks
+- **Activity type** — Watching / Listening / Playing
+  - Discord draws each type differently. Watching shows a progress bar;
+    Listening also shows the image and title in the member list
+- **Member list line** — what the single line under your name shows,
+  **per site** (title / episode / app name)
+
+### Fixed
+- **Changing a setting did nothing** — two separate causes
+  - The chosen value never reached Discord
+  - The value was saved but the card was never redrawn. This affected not just
+    the activity type but **every display setting**
+- **Live streams were not recognised**
+  - While the player did not yet know it was live, the live marker already on
+    screen was ignored
+  - Once decided as "not live", a later correction was ignored, so the progress
+    bar stayed (measured: shown as a two-hour progress bar)
+- **Cleared cards came back** — the card stayed on the profile after the tab closed
+- **TTFC: the site name appeared instead of the show** when resuming
+- Changing the language while watching drew the browsing card by mistake
+
+### Also
+- Shutdown and crash details are now recorded so a sudden disappearance can be
+  explained (kept on this PC only, never sent anywhere)
 ## What's new in 0.3.0
 
 ### Speed
@@ -262,7 +288,7 @@ Per-version history is in the [CHANGELOG](https://github.com/paeaenteom/tokusats
 
 | File | What it is |
 |---|---|
-| `TOKU-RPC-Setup-0.3.0-beta.exe` | **This is the only one you need** (app bundled inside) |
+| `TOKU-RPC-Setup-0.3.1-beta.exe` | **This is the only one you need** (app bundled inside) |
 | `toku-rpc-extension.crx`, `update.xml` | For automatic extension installation and updates — the browser fetches these on its own |
 | `toku-rpc-extension.zip` | For installing the extension manually (only if the automatic install is blocked) |
 | `TOKU-RPC-<version>-portable.zip` | No-install archive (use if antivirus blocks the exe above) |

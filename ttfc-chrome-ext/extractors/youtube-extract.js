@@ -104,8 +104,13 @@
   //    배지도 플레이어 컨트롤이 숨으면 offsetParent 가 null 이라 안 보인다.
   //    재생 중이면 .ytp-live 가 확실하고, 그게 없으면 짝 맞는 meta 로 판단한다.
   function isLive() {
+    //  ⚠ 브리지가 false 를 준다고 곧바로 '라이브 아님' 으로 끝내면 안 된다.
+    //    영상에 막 들어온 순간에는 플레이어가 아직 라이브인 줄 모를 수 있고,
+    //    그러면 DOM 에 이미 라이브 표시가 떠 있어도 무시해 버린다.
+    //    실측: VCT 라이브에서 카드가 진행 바(끝 시각 있음)로 그려졌다.
+    //    → true 는 즉시 채택하고, false 면 다른 신호도 마저 본다.
     const f = fresh();
-    if (f) return f.isLive;                // 플레이어가 직접 알려준다
+    if (f && f.isLive) return true;
     if (document.querySelector('.ytp-live')) return true;
     const b = document.querySelector('.ytp-live-badge');
     if (b && b.offsetParent !== null) return true;

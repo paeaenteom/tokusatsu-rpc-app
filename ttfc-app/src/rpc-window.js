@@ -191,6 +191,12 @@ async function loadSettings() {
   $('showEpisode').checked = cfg.showEpisode !== false;
   $('showThumbnail').checked = cfg.showThumbnail !== false;
   $('showButtons').checked = cfg.showButtons !== false;
+  $('activityType').value = String(cfg.activityType === undefined ? 3 : cfg.activityType);
+  for (const s of ["ttfc","imagination","disneyplus","youtube"]) {
+    const el = document.getElementById('sd_' + s);
+    if (el) el.value = String((cfg.statusDisplay && cfg.statusDisplay[s] !== undefined)
+        ? cfg.statusDisplay[s] : 2);
+  }
   $('timeMode').value = cfg.timeMode || 'progress';
   renderIdleOptions(cfg.idleTimeout);
   $('ver').textContent = 'v' + (cfg.version || '4.2.1');
@@ -222,6 +228,15 @@ function bindSettings() {
     $(id).addEventListener('change', () => {
       window.rpcAPI.setSetting(id, $(id).checked);
     });
+  });
+  for (const s of ["ttfc","imagination","disneyplus","youtube"]) {
+    const el = document.getElementById('sd_' + s);
+    if (el) el.addEventListener('change', () => {
+      window.rpcAPI.setSetting('statusDisplay.' + s, Number(el.value));
+    });
+  }
+  $('activityType').addEventListener('change', () => {
+    window.rpcAPI.setSetting('activityType', Number($('activityType').value));
   });
   $('timeMode').addEventListener('change', () => {
     window.rpcAPI.setSetting('timeMode', $('timeMode').value);

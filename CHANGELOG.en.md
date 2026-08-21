@@ -6,6 +6,41 @@ What changed in each version. Newest first.
 
 ---
 
+## 0.3.1 beta — 2026-08-21
+
+### New — you can choose how it looks
+- **Activity type** — Watching / Listening / Playing
+  - Discord draws each type differently. Watching shows a progress bar;
+    Listening also shows the image and title in the member list
+- **Member list line** — what the single line under your name shows,
+  **per site** (title / episode / app name)
+
+### Fixed
+- **Changing a setting did nothing** — two separate causes
+  - The chosen value never reached Discord. The connection library keeps only the
+    fields it knows and drops the rest, and defaults were filled in afterwards
+  - The value was saved but the card was never redrawn. This affected not just the
+    activity type but **every display setting**
+- **Live streams were not recognised**
+  - While the player did not yet know it was live, the live marker already on screen
+    was ignored
+  - Once decided as "not live", a later correction was ignored, so the progress bar
+    stayed (measured: shown as a two-hour progress bar)
+- **Cleared cards came back** — a card held while connecting was not cancelled, so
+  YouTube and Disney+ stayed on the profile after their tabs were closed
+- **TTFC: the site name appeared instead of the show** when resuming
+  - The show name was only learned from the episode list, which resuming skips.
+    It is now read from the playback page itself
+- Changing the language while watching drew the browsing card by mistake
+- The progress-bar mismatch note kept firing on live streams
+
+### Also
+- Shutdown and crash details are now recorded so a sudden disappearance can be
+  explained (kept on this PC only, never sent anywhere)
+- YouTube page watching is now limited to while it is needed
+
+---
+
 ## 0.3.0 beta — 2026-08-21
 
 ### Speed

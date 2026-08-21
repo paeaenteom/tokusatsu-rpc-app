@@ -100,6 +100,25 @@
     const k = cacheKey();
     if (k && name) { try { sessionStorage.setItem(k, name); } catch (e) {} }
   }
+  //  ⚠ 작품명은 원래 목록 페이지(/movies/{id}/movie-stories)에서만 배워 캐시에 넣었다.
+  //    그런데 '이어보기' 는 목록을 거치지 않고 재생 페이지로 바로 들어가서, 캐시가 비어
+  //    작품명이 사이트 이름(東映特撮ファンクラブ)으로 떨어졌다 (실측 로그로 확인).
+  //    재생 페이지에는 그 작품 목록으로 돌아가는 링크가 있고 그 텍스트가 작품명이다.
+  //    현재 URL 의 작품 번호와 같은 링크만 고르므로 다른 작품과 헷갈리지 않는다.
+  function seriesFromLink() {
+    const mv = location.pathname.match(/\/movies\/(\d+)/);
+    if (!mv) return '';
+    const want = '/movies/' + mv[1] + '/movie-stories';
+    const as = document.querySelectorAll('a[href*="/movie-stories"]');
+    for (const el of as) {
+      const href = (el.getAttribute('href') || '').replace(/\/+$/, '');
+      if (!href.endsWith(want)) continue;
+      const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (t && t.length <= 60) return t;
+    }
+    return '';
+  }
+
   function recallSeries() {
     const k = cacheKey();
     if (k) { try { return sessionStorage.getItem(k) || ''; } catch (e) {} }
@@ -190,7 +209,9 @@
         // 라이브: 제목은 headings[0] (og:title은 generic)
         const title = firstRealHeading() || ogSeriesName();
         const ep = parseEpisode(title);
-        const seriesName = recallSeries() || (ep.number ? '' : title) || 'ライブ配信';
+        const fromLive = seriesFromLink();
+        if (fromLive) rememberSeries(fromLive);
+        const seriesName = fromLive || recallSeries() || (ep.number ? '' : title) || 'ライブ配信';
         return {
           seriesName: seriesName || 'ライブ配信',
           episodeTitle: ep.number ? ep.title : (seriesName === title ? '' : title),
@@ -202,7 +223,10 @@
       // 영상: og:title = 에피소드명 → 번호/제목 분리, 작품명은 캐시 보강
       const epText = ogSeriesName() || firstRealHeading();
       const ep = parseEpisode(epText);
-      const seriesName = recallSeries() || '';
+      //  이 페이지에서 직접 읽은 값이 가장 정확하다. 읽었으면 캐시에도 넣어 둔다.
+      const fromLink = seriesFromLink();
+      if (fromLink) rememberSeries(fromLink);
+      const seriesName = fromLink || recallSeries() || '';
       return {
         seriesName: seriesName || this.siteName,
         episodeTitle: ep.title || '',
