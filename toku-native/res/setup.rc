@@ -1,0 +1,5 @@
+// 설치 프로그램 — 아이콘·manifest 와 설치할 파일 묶음 (tools/pack-setup.js 가 build/setup-payload.bin 을 만든다)
+//  windres -I build res/setup.rc ...
+1 ICON "icon.ico"
+1 24 "setup.manifest"
+101 RCDATA "setup-payload.bin"

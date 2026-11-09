@@ -27,6 +27,7 @@ toku-native/        C app — Discord RPC, binge log, settings window, tray
   src/discord       Discord IPC (named pipe)
   src/core          card engine (per-site clients · send queue · auto clear)
   src/app           window (GDI drawing) · tray menu · webhooks · background · key bindings · backfill
+  src/setup         setup program (carries the app and extension, installs and uninstalls)
   tests/            Node test harnesses (fake Discord · fake extension)
 ttfc-chrome-ext/    Chrome extension — reads what you watch, player button keys
 tools/              sync-chrome-ext.js — keeps an unpacked extension copy in sync with the source folder
@@ -55,11 +56,16 @@ Run `toku-native\build-app.bat` to get `toku-native\build\TOKU-RPC-beta.exe` (ap
 
 ## Install
 
-1. Put the exe at `%LOCALAPPDATA%\Programs\TOKU RPC Beta\TOKU-RPC-beta.exe`.
-   (Start-at-logon is registered only when the app runs from this path.)
-2. Create the `secrets.json` below, then run the exe. A tray icon appears and the settings window opens.
-3. Chrome → `chrome://extensions` → Developer mode → **Load unpacked** → the `ttfc-chrome-ext` folder.
-   After changing extension files, press **Apply new version** in the extension popup.
+1. Download **`TOKU-RPC-Setup.exe`** from [Releases](https://github.com/paeaenteom/tokusatsu-rpc-app/releases/latest) and run it. No administrator rights needed.
+   - It puts the app in `%LOCALAPPDATA%\Programs\TOKU RPC Beta`, adds a Start menu shortcut and an uninstall entry in 'Apps', then starts the app.
+   - A running copy is closed normally first. Settings and webhook data are kept.
+   - The exe is not signed, so Windows SmartScreen may warn → **More info → Run anyway**.
+2. Create the `secrets.json` below (the last setup screen tells you if it is missing).
+3. Chrome extension: **Open extension folder** on the last setup screen → Chrome `chrome://extensions` → Developer mode → **Load unpacked** → that folder (`chrome-ext`).
+   When extension files change, press **Apply new version** in the extension popup.
+
+To uninstall use TOKU RPC in 'Settings → Apps → Installed apps', or `Uninstall TOKU RPC.exe` in the install folder. Settings and webhook data go to the Recycle Bin only if you choose so.
+If you built it yourself, `toku-native\build-setup.bat` makes the same setup file (needs Node.js).
 
 ### secrets.json (required)
 

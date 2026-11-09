@@ -91,4 +91,7 @@ set TOKU_CORE_V2=
 rem mode switch: test hook flips testChannel -> app restarts itself into the other mode (test port only)
 node tests\channel-switch-test.js build\beta\TOKU-RPC-beta.exe || exit /b 1
 if /i "%1"=="mut" node tests\mutate.js || exit /b 1
+rem setup exe (app + extension inside) and install / reinstall / uninstall into a temp folder (/TEST: real app, autostart and uninstall entry untouched)
+call "%~dp0build-setup.bat" || exit /b 1
+node tests\setup-test.js build\TOKU-RPC-Setup.exe build\TOKU-RPC-beta.exe ..\ttfc-chrome-ext || exit /b 1
 echo build and tests OK

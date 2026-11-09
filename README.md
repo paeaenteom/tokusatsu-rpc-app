@@ -27,6 +27,7 @@ toku-native/        C 앱 — Discord RPC 송출, 정주행 기록, 설정 창, 
   src/discord       Discord IPC (이름 있는 파이프)
   src/core          카드 엔진 (사이트별 클라이언트 · 전송 대기열 · 자동 해제)
   src/app           창(GDI 직접 그리기) · 트레이 메뉴 · 웹훅 · 배경 · 키 설정 · 보충 기록
+  src/setup         설치 프로그램 (앱·확장을 담아 풀어 설치 · 제거)
   tests/            Node 시험 하네스 (가짜 Discord · 가짜 확장)
 ttfc-chrome-ext/    크롬 확장 — 사이트에서 시청 정보 추출, 영상 버튼 키
 tools/              sync-chrome-ext.js — 압축 해제로 로드한 확장 사본을 작업 폴더와 맞춤
@@ -55,11 +56,16 @@ winget install BrechtSanders.WinLibs.POSIX.UCRT
 
 ## 설치
 
-1. 빌드한 exe 를 `%LOCALAPPDATA%\Programs\TOKU RPC Beta\TOKU-RPC-beta.exe` 에 둡니다.
-   (부팅 자동 시작은 이 경로에서 실행할 때만 등록합니다.)
-2. 아래 `secrets.json` 을 만들고 exe 를 실행합니다. 트레이에 아이콘이 생기고 설정 창이 열립니다.
-3. 크롬 → `chrome://extensions` → 개발자 모드 → **압축해제된 확장 프로그램 로드** → `ttfc-chrome-ext` 폴더.
-   확장 파일을 고친 뒤에는 확장 팝업의 **새 버전 적용**을 누르면 됩니다.
+1. [릴리스](https://github.com/paeaenteom/tokusatsu-rpc-app/releases/latest)에서 **`TOKU-RPC-Setup.exe`** 를 받아 실행합니다. 관리자 권한은 필요 없어요.
+   - 앱을 `%LOCALAPPDATA%\Programs\TOKU RPC Beta` 에 넣고, 시작 메뉴 바로 가기와 '앱 및 기능' 제거 항목을 만든 뒤 앱을 실행합니다.
+   - 이미 돌고 있으면 정상 종료한 뒤 바꿉니다. 설정·웹훅 데이터는 그대로 남습니다.
+   - 서명되지 않은 exe 라 Windows SmartScreen 이 경고할 수 있어요 → **추가 정보 → 실행**.
+2. 아래 `secrets.json` 을 만듭니다 (없으면 설치 끝 화면에서 알려 줍니다).
+3. 크롬 확장: 설치 끝 화면의 **확장 폴더 열기** → 크롬 `chrome://extensions` → 개발자 모드 → **압축해제된 확장 프로그램 로드** → 그 폴더(`chrome-ext`).
+   확장 파일이 바뀐 뒤에는 확장 팝업의 **새 버전 적용**을 누르면 됩니다.
+
+제거는 '설정 → 앱 → 설치된 앱' 의 TOKU RPC, 또는 설치 폴더의 `Uninstall TOKU RPC.exe`. 설정·웹훅 데이터는 고른 경우에만 휴지통으로 갑니다.
+직접 빌드했다면 `toku-native\build-setup.bat` 으로 같은 설치 파일을 만들 수 있습니다 (Node.js 필요).
 
 ### secrets.json (필수)
 
