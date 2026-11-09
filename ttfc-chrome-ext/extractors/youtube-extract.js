@@ -29,7 +29,7 @@
 
   // 영상 ID — URL 이 가장 믿을 만하다 (자동 재생으로 넘어가도 URL 은 따라간다)
   function videoId() {
-    const m = /^\/shorts\/([\w-]{5,})/.exec(location.pathname);
+    const m = /^\/(?:shorts|live)\/([\w-]{5,})/.exec(location.pathname);
     if (m) return m[1];
     const v = new URLSearchParams(location.search).get('v');
     if (v) return v;
@@ -131,14 +131,29 @@
   function channelName() {
     return txt('#page-header h1, yt-page-header-renderer h1');
   }
+  //  ⚠ og:title / link[rel=image_src] 은 서버가 처음 그려 준 값이라, 유튜브 안에서
+  //    클릭해 채널로 이동하면 갱신되지 않는다.
+  //    실측 2026-08-30: 홈 → /@MOMOISDOG 로 이동한 뒤에도 og:title 이 'YouTube' 인 채로
+  //    남았고, link[rel=image_src] 는 아예 사라졌다. 그 둘로만 짝을 맞추면
+  //    채널 프로필 사진이 영영 안 뜬다 (새로고침해야만 떴다).
+  //    → 화면에 실제로 그려진 헤더 아바타를 먼저 본다. 그건 지금 채널의 것이 확실하다.
+  const YT3 = /^https:\/\/yt3\.(googleusercontent|ggpht)\.com\//;
+
   function channelAvatar() {
+    //  ① 헤더에 그려진 아바타 — SPA 이동에서도 항상 현재 채널의 것이다
+    const img = document.querySelector('#page-header img, yt-page-header-renderer img');
+    const shown = img ? (img.currentSrc || img.src || '') : '';
+    if (YT3.test(shown)) return shown;
+
+    //  ② 아직 안 그려졌으면 meta 를 쓴다. 전체 로드로 들어왔을 때만 값이 맞으므로
+    //     og:title 이 지금 채널명과 같을 때로 한정한다(예전부터 있던 안전장치).
     const name = channelName();
     if (!name) return '';
     const og = document.querySelector('meta[property="og:title"]');
     if (!og || og.content !== name) return '';
     const link = document.querySelector('link[rel="image_src"]');
     const url = link ? link.href : '';
-    return /^https:\/\/yt3\.googleusercontent\.com\//.test(url) ? url : '';
+    return YT3.test(url) ? url : '';
   }
 
   // ── 페이지(MAIN) 월드에서 오는 플레이어 정보 ──
@@ -161,13 +176,26 @@
   try { window.postMessage({ channel: CHANNEL + '_REQ' }, location.origin); } catch (e) {}
 
   // 부스터를 MAIN 월드에 전달 (거긴 chrome.storage 를 못 본다)
-  function pushBooster(on) {
-    try { window.postMessage({ channel: CHANNEL + '_BOOST', on: !!on }, location.origin); } catch (e) {}
+  //  단계에 맞는 주기(ms)를 그대로 넘긴다 — 값의 출처를 content.js 한 곳으로 모은다
+  function pushLevel(level) {
+    const L = (self.TOKU_LEVELS && self.TOKU_LEVELS[level]) || null;
+    const ms = L ? L.poll : 0;
+    try {
+      window.postMessage({ channel: CHANNEL + '_BOOST', ms: ms,
+        on: level === 'max' || level === 'high' }, location.origin);
+    } catch (e) {}
+  }
+  function levelFrom(r) {
+    if (!r) return 'normal';
+    if (self.TOKU_LEVELS && self.TOKU_LEVELS[r.boostLevel]) return r.boostLevel;
+    return r.booster ? 'high' : 'normal';
   }
   try {
-    chrome.storage.local.get('booster', (r) => pushBooster(r && r.booster));
+    chrome.storage.local.get(['boostLevel', 'booster'], (r) => pushLevel(levelFrom(r)));
     chrome.storage.onChanged.addListener((ch, area) => {
-      if (area === 'local' && ch.booster) pushBooster(ch.booster.newValue);
+      if (area !== 'local') return;
+      if (ch.boostLevel) pushLevel(ch.boostLevel.newValue);
+      else if (ch.booster) pushLevel(ch.booster.newValue ? 'high' : 'normal');
     });
   } catch (e) { /* 무시 */ }
 
@@ -235,7 +263,9 @@
     },
 
     isPlaybackUrl() {
-      return /^\/watch$/.test(location.pathname) || /^\/shorts\//.test(location.pathname);
+      //  /live/<id> 는 라이브 공유 링크 주소다. 그 주소 그대로 시청 페이지가 열린다 (실측 2026-09-24).
+      return /^\/watch$/.test(location.pathname) || /^\/shorts\//.test(location.pathname)
+        || /^\/live\/[\w-]{5,}/.test(location.pathname);
     },
 
     //  ⚠ Shorts 에서는 <video> 가 2개다 (실측 2026-08-19).

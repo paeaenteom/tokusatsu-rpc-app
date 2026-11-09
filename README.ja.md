@@ -2,211 +2,128 @@
 
 # TOKU RPC
 
-特撮の配信サイトでの視聴状況を **Discord のプロフィールに表示**し、**一気見の記録**を残すツールです。
+特撮配信サイトの視聴状況を **Discord のプロフィールカード** に表示し、**一気見の記録** を Discord の Webhook チャンネルに残す Windows 用ツール。
 
 対応サイト
 - 東映特撮ファンクラブ (TTFC) — `pc.tokusatsu-fc.jp`
 - TSUBURAYA IMAGINATION — `imagination.m-78.jp`
-- Disney+ — `www.disneyplus.com` *(実験)*
 - YouTube — `www.youtube.com`
+- Disney+ — `www.disneyplus.com` *(実験的)*
+- CHZZK (チジック) — `chzzk.naver.com`
+- dアニメストア — `animestore.docomo.ne.jp`
 
-> **beta 0.3.1** — 個人用に作ったツールです。バグがあるかもしれません。
-
----
-
-## インストール
-
-[リリース](https://github.com/paeaenteom/tokusatsu-rpc-app/releases/latest)から
-**`TOKU-RPC-Setup-<バージョン>.exe`** ひとつだけダウンロードして実行してください。アプリ本体も同梱しているので、ほかにダウンロードするファイルはありません。
-
-インストール画面で **拡張機能を入れるブラウザにチェックを入れる**だけです。
-インストール済みのブラウザを自動で見つけて一覧に表示します。
-
-| 対応ブラウザ |
-|---|
-| Google Chrome · Microsoft Edge · NAVER Whale · Brave · Vivaldi |
-
-インストーラーがやること
-1. アプリのインストール (`%LOCALAPPDATA%\Programs\TOKU RPC`) — 自分のアカウントのフォルダなので管理者権限は不要
-2. 選んだブラウザに拡張機能を自動登録
-3. デスクトップにショートカット作成・アプリ起動 *(オプション、チェックを外せます)*
-
-手順 2 で **ユーザー アカウント制御 (UAC) のダイアログが一度だけ**表示されます → **[はい]**。
-Windows が拡張機能のポリシー領域 (`SOFTWARE\Policies`) への書き込みを管理者にしか許可していないためで、
-管理者権限を使うのはこの手順だけです。拒否してもアプリは問題なくインストールされ、拡張機能だけ下の手動インストールで追加すれば大丈夫です。
-
-インストール後は **ブラウザを完全に終了してから起動し直してください。**
-(トレイアイコンからも終了させないと拡張機能が反映されません)
-
-> サイレントインストールしたいときは `TOKU-RPC-Setup-<バージョン>.exe /S` — 検出したすべてのブラウザに登録します。
-> インストールログは `%TEMP%\toku-rpc-install.log` に残ります。
-
-<details>
-<summary>拡張機能が自動で入らないとき (手動インストール)</summary>
-
-1. リリースから `toku-rpc-extension.zip` をダウンロードして解凍します
-2. `chrome://extensions` を開く → 右上の**デベロッパー モード**をオンにする
-3. **パッケージ化されていない拡張機能を読み込む** → 解凍したフォルダを選択
-
-</details>
-
----
-
-## 使い方
-
-アプリを起動したまま対応サイトで動画を見るだけです。あとは自動です。
-
-- 視聴中は **作品名・エピソード・経過時間・サムネイル**が Discord に表示されます
-- サイト内を見て回っているときは、開いているページの種類 (作品ページ・シリーズ一覧など) が表示されます
-- アプリはトレイに常駐し、PC を起動すると自動で (ウィンドウなしで) 立ち上がります
-  - トレイアイコンの右クリックメニューから、RPC のオン/オフや自動起動の解除ができます
-
-### 一気見モード
-
-拡張機能のアイコンを押して**一気見モード**をオンにすると:
-
-- 動画が**最後まで再生されると**自動で次の話に進みます
-- 全画面で見ていた場合は次の話でも**全画面を維持**します
-- エピソードごとに Discord のウェブフックで**視聴記録**を残します (下の設定が必要)
-- 最終話まで見ると「一気見終了」の記録を残して自動でオフになります
-
-> **一時停止しても一気見は終わりません。** ちょっと止めても、別のタブに切り替えても、しばらく経ってから続きを見ても
-> 一気見モードはそのまま維持されます。終わるのは*最終話まで見終わったとき*か*自分でトグルを OFF にしたとき*だけです。
-
-### 言語
-
-**한국어 · English · 日本語** から選べます。初期値は **システムの言語** です。
-アプリはミニウィンドウ、拡張機能はポップアップで切り替えます。
-
-拡張機能を「システムの言語」のままにしておくと、**アプリで選んだ言語に追従します。**
-片方を変えるだけで両方変わります。Discord に表示される文言と一気見の記録も同じ言語になります。
-
----
-
-## 一気見の記録 (ウェブフック) の設定 (任意)
-
-一気見の記録を Discord のチャンネルに残したいときは、**自分のウェブフック URL** を登録してください。
-(登録しなくても、ほかの機能はすべて問題なく動きます。)
-
-1. Discord で記録を残したいチャンネル → **チャンネルの編集 → 連携サービス → ウェブフック → 新しいウェブフック** → URL をコピー
-2. 下のパスに `secrets.json` ファイルを作って URL を入れます
-
-```
-%APPDATA%\toku-rpc\secrets.json
-```
-
-```json
-{
-  "bingeWebhookUrl": "ここにコピーしたウェブフックURL"
-}
-```
-
-3. アプリを起動し直します
-
-> このファイルは**自分の PC にだけ**保存され、リポジトリやインストーラーには含まれません。
-> ウェブフック URL はパスワードと同じです。知っている人は誰でもそのチャンネルに書き込めるので、
-> 公開される場所 (スクリーンショットやリポジトリなど) には載せないでください。
-
-<details>
-<summary>自分の Discord アプリケーションを使いたい場合</summary>
-
-デフォルトでは作者の Discord アプリケーションを使います (表示名 `TTFC` / `IMAGINATION`)。
-自分のアプリケーションに変えるときは、同じ `secrets.json` に追加してください。
-
-```json
-{
-  "discordAppIds": { "ttfc": "アプリID", "imagination": "アプリID" }
-}
-```
-
-この場合は [Discord Developer Portal](https://discord.com/developers/applications) の
-**Rich Presence → Art Assets** に下の名前で画像をアップロードする必要があります。
-
-| アプリ | 必要なアセット |
-|---|---|
-| TTFC | `ttfc_logo`, `play`, `pause`, `kamen_rider_logo`, `super_sentai_series_logo`, `metal_hero_series_logo`, `project_r_e_d_logo` |
-| IMAGINATION | `tsuburaya_imagination_logo`, `play`, `pause` |
-
-</details>
+> **C 版** — C11 と Win32 API だけで作り直したアプリです（外部ライブラリ・ランタイムなし、exe 1つで約 1.1MB）。
+> ベータ 0.1.0 · テスト版（アルファ）0.2.0。個人用に作ったツールなので不具合があるかもしれません。
+> 以前の Electron 版（0.3.1 まで）は [`v0.3.1-beta` タグ](https://github.com/paeaenteom/tokusatsu-rpc-app/tree/v0.3.1-beta) に残っています。
 
 ---
 
 ## 構成
 
 ```
-ttfc-app/           Electron アプリ — Discord RPC の送信、一気見の記録、トレイ常駐
-ttfc-chrome-ext/    Chrome 拡張機能 — サイトから視聴情報を抽出
-tools/              インストールスクリプト・リリースビルドスクリプト
+toku-native/        C アプリ — Discord RPC 送信、一気見の記録、設定ウィンドウ、トレイ
+  src/base          バイトバッファ · JSON · SHA-1/Base64 · UTF-8
+  src/net           WebSocket サーバー (127.0.0.1:7690) · WinHTTP
+  src/discord       Discord IPC（名前付きパイプ）
+  src/core          カードエンジン（サイト別クライアント · 送信キュー · 自動解除）
+  src/app           ウィンドウ（GDI 直接描画）· トレイメニュー · Webhook · 背景 · キー設定 · 補充記録
+  tests/            Node テストハーネス（偽 Discord · 偽拡張機能）
+ttfc-chrome-ext/    Chrome 拡張機能 — サイトから視聴情報を取得、プレーヤーボタンのキー
+tools/              sync-chrome-ext.js — 展開して読み込んだ拡張機能のコピーを作業フォルダと揃える
 ```
 
-アプリと拡張機能はローカルの WebSocket (`127.0.0.1:7690`) だけで通信します。
-視聴情報が外部に出るのは **Discord** と、設定していれば**自分のウェブフック先のチャンネル**だけです。
-
-### 自分でビルドする
-
-```powershell
-cd ttfc-app; npm install          # 初回のみ
-powershell -File tools\build-release.ps1
-```
-
-`dist-release\` に `TOKU-RPC-Setup-<バージョン>.exe`・拡張機能 (CRX/ZIP)・`update.xml` が作られます。
-これらのファイルをそのままリリースに添付すれば OK です。
-
-> 拡張機能の署名鍵 `ttfc-chrome-ext-key.pem` はリポジトリにありません。
-> この鍵が拡張機能の ID を決めるので、**なくすと既存ユーザーの自動更新が止まります。**
+アプリと拡張機能はローカル WebSocket（`127.0.0.1:7690`）だけで通信します。
+視聴情報が外に出るのは **Discord**、設定した場合は **自分の Webhook チャンネル**、そして Discord が開けないサムネイルを置く画像ホスト（自分の Worker、または litterbox · uguu · catbox）だけです。
 
 ---
 
+## ビルド
 
-## ウイルス対策ソフトが「ウイルスが検出されました」と言うとき
+必要なもの: Windows 10/11 x64、[WinLibs](https://winlibs.com/) GCC（mingw-w64 UCRT、`windres` 付き）
 
-**誤検知です。** コード署名証明書を持たない個人開発者のインストーラーではよくあります。
+```bat
+winget install BrechtSanders.WinLibs.POSIX.UCRT
+```
 
-Windows Defender が付ける名前は `Trojan:Win32/Sabsik.EN.B!ml` で、末尾の **`!ml` は
-「機械学習による推測」**という印です。既知のマルウェアと一致したのではなく、
-*署名が無い・自己解凍する・レジストリを書き換える・管理者権限を求める*という組み合わせが
-統計的に怪しく見えるという判定にすぎません。インストーラーなら当然行うことです。
+`toku-native\build-app.bat` を実行すると `toku-native\build\TOKU-RPC-beta.exe` ができます（テストなし、アプリのみ）。
 
-**信用できなければ入れないでください。** 確認・回避の方法:
+> `build.bat` はビルドと全テストです。一部のテストは以前の Electron 版の JS コードと結果を1文字ずつ比べるため、
+> Node.js 24 と `v0.3.1-beta` の `ttfc-app` ソースが必要です（テストファイル内のパスを参照）。
+> 画面の文言 `src/app/strings.h` は生成済みのファイルが入っています。
 
-- **インストーラー自体のコードも公開しています** — [`tools/installer/Installer.cs`](tools/installer/Installer.cs)
-- **圧縮版を使う** — リリースの `TOKU-RPC-<バージョン>-portable.zip` は実行ファイルではないため
-  この判定を受けません。展開して `TOKU RPC.exe` を実行 (拡張機能は `toku-rpc-extension.zip` から手動登録)
-- **[Microsoft に誤検知を報告](https://www.microsoft.com/en-us/wdsi/filesubmission)** — 通常は数日で解除されます
+---
 
-署名証明書があれば根本解決しますが、個人プロジェクトのためまだ用意できていません。
-## 注意点
+## インストール
 
-- Windows 専用です (Electron の仕組み上 macOS 版もビルドできますが、動作確認はしていません)
-- IMAGINATION のサムネイルは、サイト側が外部からのアクセスを制限しているため Discord が直接読み込めません。
-  そのため、いったん画像アップローダーに上げてから表示しています (litterbox → uguu の順に試します)
-- このツールは視聴情報を表示するだけで、動画をダウンロードしたり著作権保護を回避したりはしません
+1. exe を `%LOCALAPPDATA%\Programs\TOKU RPC Beta\TOKU-RPC-beta.exe` に置きます。
+   （ログオン時の自動起動は、このパスから起動したときだけ登録します。）
+2. 下の `secrets.json` を作ってから exe を起動します。トレイにアイコンが出て、設定ウィンドウが開きます。
+3. Chrome → `chrome://extensions` → デベロッパーモード → **パッケージ化されていない拡張機能を読み込む** → `ttfc-chrome-ext` フォルダ。
+   拡張機能のファイルを変えたあとは、拡張機能ポップアップの **新しいバージョンを適用** を押します。
 
+### secrets.json（必須）
 
-### 「スマート アプリ コントロール」にブロックされるとき
+C 版はコードに Discord アプリケーション ID を持ちません。自分のアプリケーションを作って ID を入れてください。
 
-これは上のウイルス誤検知とは**別の問題**で、現時点では回避手段がありません。
+```
+%APPDATA%\toku-rpc-native\secrets.json
+```
 
-スマート アプリ コントロール (Windows 11 専用) は、**署名の無い実行ファイルを無条件に遮断**します。
-評判が積み上がっても、ファイル情報を埋めても通りません。Microsoft 信頼ルート プログラムの
-CA が発行したコード署名証明書で署名されたプログラムだけを許可します。
+```json
+{
+  "discordAppIds": {
+    "ttfc": "アプリID", "imagination": "アプリID", "youtube": "アプリID",
+    "disneyplus": "アプリID", "chzzk": "アプリID", "danime": "アプリID"
+  },
+  "bingeWebhookUrl": "任意 — 一気見記録の既定 Webhook URL"
+}
+```
 
-このプログラムにその証明書はありません。個人が買うには安くなく (年 3 万円程度〜)、
-Microsoft が薦める安価な代替の Azure Artifact Signing は
-**個人開発者の登録が米国・カナダ在住者に限定**されています。
+[Discord Developer Portal](https://discord.com/developers/applications) で各アプリの **Rich Presence → Art Assets** に次の名前で画像を登録します。
 
-選択肢は 2 つだけです。
+| サイト | アセット |
+|---|---|
+| ttfc | `ttfc_logo`, `play`, `pause`（+ `kamen_rider_logo` などシリーズのバナー） |
+| imagination | `tsuburaya_imagination_logo`, `play`, `pause` |
+| youtube | `logo`, `play`, `pause`, `live` |
+| disneyplus | `disney__logo`, `play`, `pause` |
+| chzzk | `chzzk_logo`, `play`, `pause`, `live` |
+| danime | `danime_logo`, `play`, `pause` |
 
-- **インストールしない** — 最も安全で、それで構いません
-- **スマート アプリ コントロールを切る** — *Windows セキュリティ → アプリとブラウザーの制御 → スマート アプリ コントロール*
-  ⚠ **一度切ると、Windows を再インストールするまで元に戻せません。** プログラム 1 つのために
-  システム全体の保護を恒久的に下げることになります。見合うかどうか必ず検討してください。
-  [ソースはすべて公開しています](https://github.com/paeaenteom/tokusatsu-rpc-app)ので、読んでご自分で判断いただけます。
+> このファイルは **自分の PC にだけ** 置きます。Webhook URL はパスワードと同じで、知っている人なら誰でもそのチャンネルに書き込めます。
+> 作品別の Webhook とキャラクターは、アプリの **Webhook** タブで追加すると同じファイル（`titleWebhooks`）と設定に保存されます。
+> サムネイルを自分の Cloudflare Worker に上げる場合は `"avatarUpload": { "url": "...", "token": "..." }` を加えます（なければ公開ホストを使います）。
 
-証明書を用意でき次第、署名済みで配布します。
+---
+
+## 使い方
+
+設定ウィンドウのタブ
+- **アクティビティ** — いま Discord に出ているカード（Discord と同じ見た目）、接続状態、一気見モードのスイッチ
+- **表示設定** — 進行時間の形、作品・話・サムネイル・ボタンの表示、アクティビティの種類、サイト別のステータス表示
+- **アプリ設定** — 言語、RPC のオン/オフ、ログオン時に起動、**テスト版（アルファ）** スイッチ（切り替えるとアプリが再起動）
+- **キー設定** — 動画プレーヤーのボタンごとのキー（Chrome 拡張機能がそのボタンを押す）
+- **背景** — ウィンドウの背景写真（合わせ方 · 位置 · 拡大 · ぼかし · 明るさ）
+- **Webhook** — 作品別の一気見 Webhook フォルダ · アイコン · キャラクター（名前とプロフィール画像）
+- **補完** — 拡張機能なしで観た話を後から記録。**リンクから**（TTFC · IMAGINATION のエピソードリンク）または **手動で入力**（DVD 特典・劇場限定映像など: 作品 · 話 · 視聴時刻 · 出典 · 画像）
+
+トレイアイコンを右クリックすると、拡張機能 / Discord の応答時間（ms）とスイッチが並んだメニューが開きます。
+
+### ベータ / テスト版（アルファ）
+
+exe 1つに2つのモードがあります。普段は **ベータ**、アプリ設定のスイッチをオンにするとアプリが再起動して **テスト版（アルファ）** になります。
+アルファは Discord クライアントの presence 送信上限（20秒に5回）に合わせた新しい送り方を先に試します
+（同じ内容は数えず、再生・一時停止・シークが続いたら 0.35 秒まとめて最後の状態だけ送ります）。
+
+### データの場所
+
+`%APPDATA%\toku-rpc-native\` — `config.json`（設定）· `secrets.json` · `logs\main.log` · `backgrounds\` · `hook-avatars\` · `thumb-cache.json`
+
+---
+
 ## 変更履歴
 
-バージョンごとの変更点は [CHANGELOG.ja.md](CHANGELOG.ja.md) にあります。
+[CHANGELOG.ja.md](CHANGELOG.ja.md)
 
 ## ライセンス
 

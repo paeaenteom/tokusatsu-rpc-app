@@ -9,7 +9,7 @@
 //   3. content.js 의 주기 전송이 워커를 계속 깨움
 // ============================================================
 
-importScripts('locales/ko.js', 'locales/en.js', 'locales/ja.js', 'i18n.js');
+importScripts('locales/ko.js', 'locales/en.js', 'locales/ja.js', 'i18n.js', 'version-print.js', 'page-resolve.js');
 const i18n = self.TOKU_I18N;
 
 const WS_URL = 'ws://127.0.0.1:7690';
@@ -169,6 +169,62 @@ async function fetchSquareBytes(url, bgUrl) {
   return { dataUrl: out ? await blobToDataUrl(out) : rawDataUrl, rawDataUrl };
 }
 
+// ── 보충 기록 (2026-11-04) ──
+//  모바일로 본 화는 확장이 못 본다 → 앱 '보충' 탭에 링크를 넣으면 앱이 RESOLVE_PAGE 로 묻는다.
+//  워커가 페이지를 받아(크롬 VPN 경로 그대로 — 앱 쪽 Node 는 일본 사이트에 막힌다) 작품·화·썸네일을 돌려준다.
+//  읽는 곳은 page-resolve.js 가 허락한 두 사이트의 에피소드 주소뿐이다.
+const RESOLVE_TIMEOUT_MS = 15000;
+const RESOLVE_IMG_MAX = 8 * 1024 * 1024;
+
+async function resolveText(url) {
+  const r = await fetch(url, { credentials: 'include', signal: AbortSignal.timeout(RESOLVE_TIMEOUT_MS) });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.text();
+}
+
+async function resolveThumb(url) {
+  const r = await fetch(url, { credentials: 'omit', signal: AbortSignal.timeout(RESOLVE_TIMEOUT_MS) });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const buf = new Uint8Array(await r.arrayBuffer());
+  if (!buf.length || buf.length > RESOLVE_IMG_MAX) throw new Error('크기 ' + buf.length);
+  const type = self.TOKU_RESOLVE.sniffImage(buf);
+  if (!type) throw new Error('이미지 아님');
+  return blobToDataUrl(new Blob([buf], { type }));
+}
+
+async function resolvePage(msg) {
+  const R = self.TOKU_RESOLVE;
+  const id = String(msg.id || '').slice(0, 40);
+  const c = R && R.classify(msg.url);
+  if (!c) { rawSend({ type: 'RESOLVED', id, ok: false, error: 'badurl' }); return; }
+  try {
+    let info;
+    if (c.site === 'ttfc') {
+      //  작품명은 에피소드 페이지에 없다 — 같은 작품의 에피소드 목록 페이지에서 읽는다
+      const [ep, list] = await Promise.all([resolveText(c.url), resolveText(c.listUrl).catch(() => '')]);
+      info = R.fromTtfc(R.metaOf(ep), R.metaOf(list));
+    } else {
+      info = R.fromImagination(R.metaOf(await resolveText(c.url)));
+    }
+    if (!info.seriesName && !info.episodeNumber && !info.episodeTitle) {
+      rawSend({ type: 'RESOLVED', id, ok: false, error: 'empty' });
+      return;
+    }
+    let thumbDataUrl = '';
+    if (info.thumbnail) {
+      try { thumbDataUrl = await resolveThumb(info.thumbnail); } catch (e) { LOG('보충 썸네일 실패:', e.message); }
+    }
+    LOG('보충 페이지 읽음:', c.site, info.seriesName, info.episodeNumber);
+    rawSend({ type: 'RESOLVED', id, ok: true, site: c.site, url: c.url, seriesName: info.seriesName,
+      episodeNumber: info.episodeNumber, episodeTitle: info.episodeTitle, thumbnail: info.thumbnail, thumbDataUrl });
+  } catch (e) {
+    //  일본 밖에서 열면 TTFC 는 404, IMAGINATION 은 403 을 준다 (2026-11-04 실측) — VPN 이 꺼진 경우
+    const blocked = /HTTP (403|404)/.test(e.message);
+    LOG('보충 페이지 읽기 실패:', e.message);
+    rawSend({ type: 'RESOLVED', id, ok: false, error: blocked ? 'blocked' : 'fetch' });
+  }
+}
+
 // url → 배경 url. 앱이 NEED_THUMB 로 다시 요청할 때도 같은 합성본을 만들려면
 // 배경이 뭐였는지 기억하고 있어야 한다 (그 요청엔 배경 정보가 안 실린다).
 const bgFor = new Map();
@@ -189,9 +245,11 @@ function rememberBg(url, bgUrl) {
 //  지금은 사이트마다 Discord 애플리케이션이 따로 있으므로, 사이트별로 하나씩
 //  주인을 뽑아 각자 올린다 — 켜 둔 사이트가 전부 프로필에 뜬다(유빈 요청).
 //  같은 사이트를 여러 탭에서 열었을 때의 깜빡임은 그대로 막는다.
-const tabStates = new Map();      // tabId → { data, at, playing, site }
+const tabStates = new Map();      // tabId → { data, at, playing, active, win, site }
 const ownerBySite = new Map();    // site → tabId
-const TAB_STALE_MS = 6000;
+//  ⚠ 둘러보기 탭은 내용이 그대로면 10초(BROWSING_HEARTBEAT)마다만 보낸다. 예전 6초로는 그 사이
+//    4초 동안 보고 있는 탭이 '죽은 탭' 으로 빠져, 뒤에 열어 둔 같은 사이트 탭이 카드를 가져갔다.
+const TAB_STALE_MS = 15000;
 
 function siteOfTab(id) {
   const s = tabStates.get(id);
@@ -204,24 +262,18 @@ function dropStale() {
   for (const [site, id] of ownerBySite) if (!tabStates.has(id)) ownerBySite.delete(site);
 }
 
-// 해당 사이트 안에서만 주인을 정한다. 규칙은 예전과 같다:
-//  주인 자리는 최대한 유지하고, 주인이 재생 중이 아닌데 같은 사이트의 다른 탭이
-//  재생 중일 때만 넘긴다. (둘 다 일시정지면 유지 — 안 그러면 매 갱신마다 뒤바뀐다)
+// 해당 사이트 안에서만 주인을 정한다.
+//  순위: 재생 중 > 지금 창에서 보고 있는 탭. 순위가 같으면 지금 주인을 유지한다
+//  (안 그러면 매 갱신마다 뒤바뀐다). 재생 중인 뒤쪽 에피소드 탭은 여전히 이긴다.
 function chooseOwner(site) {
   dropStale();
   const cur = ownerBySite.get(site);
-  if (cur != null && tabStates.has(cur) && siteOfTab(cur) === site) {
-    if (tabStates.get(cur).playing) return cur;
-    let othersPlaying = false;
-    for (const [id, s] of tabStates)
-      if (id !== cur && s.site === site && s.playing) { othersPlaying = true; break; }
-    if (!othersPlaying) return cur;
-  }
+  const rank = (s) => (s.playing ? 2 : 0) + (s.active ? 1 : 0);
   let bestId = null, best = null;
   for (const [id, s] of tabStates) {
     if (s.site !== site) continue;
-    if (!best || (s.playing && !best.playing) ||
-        (s.playing === best.playing && s.at > best.at)) { bestId = id; best = s; }
+    const r = rank(s), br = best ? rank(best) : -1;
+    if (r > br || (r === br && bestId !== cur && (id === cur || s.at > best.at))) { bestId = id; best = s; }
   }
   if (bestId == null) { ownerBySite.delete(site); return null; }
   if (bestId !== cur) {
@@ -231,10 +283,30 @@ function chooseOwner(site) {
   return bestId;
 }
 
+//  탭을 바꾸면 '보고 있는 탭' 표시를 옮긴다 (tabs 권한 없이 쓸 수 있다)
+//  ⚠ 탭을 다른 창으로 끌어내면 저장해 둔 창 번호가 낡는다. 활성화된 탭은 창 번호도 같이 고친다
+//    (안 그러면 옮긴 주인 탭이 '안 보는 탭' 이 돼 같은 사이트 다른 탭에 카드가 넘어갔다).
+chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
+  for (const [id, s] of tabStates) {
+    if (id === tabId) { s.active = true; s.win = windowId; }
+    else if (s.win === windowId) s.active = false;
+  }
+});
+chrome.tabs.onAttached.addListener((tabId, { newWindowId }) => {
+  const s = tabStates.get(tabId);
+  if (s) s.win = newWindowId;
+});
+
 chrome.tabs.onRemoved.addListener((tabId) => {
-  const site = siteOfTab(tabId);
-  if (!tabStates.delete(tabId)) return;
-  if (ownerBySite.get(site) === tabId) {
+  //  ⚠ 메모리 절약으로 버려졌거나 화면이 죽은 탭은 소식이 끊겨 dropStale 이 먼저 지운다.
+  //    예전엔 그 뒤 탭을 닫아도 아무것도 안 해서 카드가 남았고, 앱이 다시 켜질 때 되살아났다.
+  //    → 앱에 보이고 있는 상태가 이 탭 것이면 이미 잊었더라도 정리한다.
+  let site = siteOfTab(tabId);
+  if (!site) for (const [s, id] of lastTabBySite) if (id === tabId) { site = s; break; }
+  const known = tabStates.delete(tabId);
+  const shown = lastTabBySite.get(site) === tabId;
+  if (!known && !shown) return;
+  if (ownerBySite.get(site) === tabId || shown) {
     ownerBySite.delete(site);
     // 같은 사이트의 다른 탭이 남아 있으면 그쪽이 이어받고, 없으면 그 사이트만 지운다
     if (chooseOwner(site) == null) {
@@ -245,6 +317,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
       //   하필 단축평가 때문에 왼쪽이 true 인 경우, 즉 "CLEAR 를 보내야 하는 바로 그때"만
       //   터져서 아무도 못 알아챘다. (탭이 남아 있으면 오른쪽을 읽지도 않아 조용히 지나감)
       lastBySite.delete(site);   // 안 지우면 재연결 때 onopen 이 닫힌 탭 상태를 되올린다
+      lastTabBySite.delete(site);
       if (ws && ws.readyState === WebSocket.OPEN) rawSend({ type: 'CLEAR', site });
       else ensureConnected();
     }
@@ -255,8 +328,29 @@ let ws = null;
 // 사이트마다 따로 기억한다 — 재연결하면 켜져 있던 사이트를 전부 되살려야
 // 하나만 남고 나머지가 사라지지 않는다
 const lastBySite = new Map();   // site → 마지막 활동 데이터
+const lastTabBySite = new Map();   // site → lastBySite 에 든 상태를 보낸 탭
 let pendingData = null;         // 연결 대기 중 보낼 데이터 (최신 1건)
 let reconnectTimer = null;
+
+// ── 진단 기록 (2026-10-17) ──
+//  Chrome 을 다시 켠 뒤 앱에 안 붙는 원인(워커가 안 뜨나 / 떠도 연결이 막히나)을 가리려고,
+//  워커 시작·연결 결과를 chrome.storage.local 'diagSw' 에 최근 20건만 남긴다 (콘솔은 디스크에 안 남는다).
+//  같은 일이 되풀이되면 한 줄의 횟수만 올리고, 저장은 1분에 한 번까지 (연결 실패 5초 재시도로 쓰기가 쌓이지 않게).
+const diagSw = [];
+let diagSavedAt = 0;
+function noteSw(ev) {
+  const now = Date.now();
+  const last = diagSw[diagSw.length - 1];
+  if (last && last.ev === ev) {
+    last.n++; last.last = new Date(now).toISOString();
+    if (now - diagSavedAt < 60000) return;
+  } else {
+    diagSw.push({ ev, at: new Date(now).toISOString(), n: 1 });
+    if (diagSw.length > 20) diagSw.shift();
+  }
+  diagSavedAt = now;
+  try { chrome.storage.local.set({ diagSw: diagSw.slice() }).catch(() => {}); } catch (e) { /* 무시 */ }
+}
 
 function ensureConnected() {
   if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
@@ -267,6 +361,7 @@ function ensureConnected() {
 
     ws.onopen = () => {
       LOG('WebSocket 연결됨 ✓');
+      noteSw('ws 연결됨');
       const pend = pendingData;
       pendingData = null;
       // 살아있는 사이트를 전부 다시 올린다 (하나만 복구되면 나머지가 사라진다)
@@ -276,6 +371,7 @@ function ensureConnected() {
 
     ws.onclose = (e) => {
       LOG(`WebSocket 끊김 (code=${e.code}) — 재연결 대기`);
+      noteSw('ws 끊김 code=' + e.code);
       ws = null;
       scheduleReconnect();
     };
@@ -300,9 +396,41 @@ function ensureConnected() {
               });
             });
         }
+        else if (msg.type === 'SET_BINGE') {
+          //  앱 창·트레이에서 정주행 모드를 켜고 끔 — 저장값만 바꾸면 탭(content.js)·배지가 storage.onChanged 로 따라간다
+          chrome.storage.local.set({ bingeMode: !!msg.on });
+        }
+        else if (msg.type === 'KEYBINDS') {
+          //  영상 버튼 키 설정 — 앱이 원본이다. 받은 그대로 저장하면 탭(keybind.js)이 storage.onChanged 로 따라간다.
+          //  처음 한 번: 예전 확장(설정 창이 페이지에 있던 판)에 만들어 둔 키가 있으면 앱에 먼저 넘긴다 (앱에 아무것도 없을 때만 앱이 가져감)
+          chrome.storage.local.get(['keybinds', 'keybindsOn', 'keybindsFromApp'], (r) => {
+            if (!r.keybindsFromApp && r.keybinds && typeof r.keybinds === 'object' && Object.keys(r.keybinds).length) {
+              rawSend({ type: 'KEYBINDS_LOCAL', keybinds: r.keybinds, on: r.keybindsOn || {} });
+            }
+            chrome.storage.local.set({ keybinds: msg.keybinds || {}, keybindsOn: msg.on || {}, keybindsFromApp: true });
+          });
+        }
+        else if (msg.type === 'KB_PICK') {
+          //  앱 '키 설정' 탭의 버튼 고르기 — 그 사이트 탭을 앞으로 띄우고 고르기 모드로
+          kbPick(msg);
+        }
+        else if (msg.type === 'KB_PICK_CANCEL') {
+          if (kbPicking && kbPicking.reqId === msg.reqId) {
+            chrome.tabs.sendMessage(kbPicking.tabId, { action: 'KB_PICK_CANCEL', reqId: msg.reqId }).catch(() => {});
+            kbPicking = null;
+          }
+        }
+        else if (msg.type === 'RESOLVE_PAGE') {
+          //  앱 '보충' 탭 — 링크의 작품·화·썸네일을 읽어 돌려준다
+          resolvePage(msg);
+        }
         else if (msg.type === 'BOOSTER') {
-          // 앱이 부스터를 켜고 끔 — 콘텐트 스크립트가 storage 를 보고 주기를 바꾼다
-          chrome.storage.local.set({ booster: !!msg.on });
+          // 앱이 반응 속도를 바꿈 — 콘텐트 스크립트가 storage 를 보고 주기를 바꾼다
+          //  level 이 없는 예전 앱이면 on 으로 단계를 짐작한다
+          chrome.storage.local.set({
+            booster: !!msg.on,
+            boostLevel: msg.level || (msg.on ? 'high' : 'normal'),
+          });
         }
         else if (msg.type === 'LANG') {
           // 앱에서 언어가 바뀜 — 확장 설정이 '시스템 언어'면 이걸 따라간다
@@ -310,8 +438,12 @@ function ensureConnected() {
         }
         else if (msg.type === 'CONNECTED') {
           LOG('앱 핸드셰이크 수신');
+          sendBingeState();   // 앱 창의 정주행 스위치가 지금 상태로 시작하게
           if (msg.lang) chrome.storage.local.set({ appLang: msg.lang });
-          chrome.storage.local.set({ booster: !!msg.booster });
+          chrome.storage.local.set({
+            booster: !!msg.booster,
+            boostLevel: msg.level || (msg.booster ? 'high' : 'normal'),
+          });
           // 앱 (재)시작 = 앱의 재호스팅 캐시 소실 → content의 "이미 보냄" 기록을
           // 리셋해 썸네일 바이트 재전송 유도 (안 하면 재시작 후 로고만 계속 뜸)
           chrome.tabs.query({}, (tabs) => {
@@ -324,6 +456,7 @@ function ensureConnected() {
     };
   } catch (e) {
     LOG('WebSocket 생성 실패:', e.message);
+    noteSw('ws 생성 실패 ' + e.message);
     ws = null;
     scheduleReconnect();
   }
@@ -358,6 +491,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       data: { ...msg.data },
       at: Date.now(),
       playing: !!msg.data.isPlaying,
+      active: !!(sender.tab && sender.tab.active),
+      win: sender.tab ? sender.tab.windowId : -1,
       site,
     });
     const owner = chooseOwner(site);
@@ -368,6 +503,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
     }
     lastBySite.set(site, { ...msg.data });
+    lastTabBySite.set(site, tabId);
     const sent = sendOrQueue({ ...msg.data });
     sendResponse({ ok: sent, connected });
   } else if (msg.action === 'CLEAR') {
@@ -384,11 +520,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     LOG('CLEAR 요청 [' + site + ']');
     lastBySite.delete(site);
+    lastTabBySite.delete(site);
     pendingData = null;
     if (connected) rawSend({ type: 'CLEAR', site });   // 그 사이트만 지운다
     sendResponse({ ok: true, connected });
   } else if (msg.action === 'GET_STATUS') {
-    sendResponse({ connected, wsUrl: WS_URL });
+    //  팝업을 열면 끊겨 있던 연결을 곧바로 다시 시도한다 (다음 알람 30초를 기다리지 않게)
+    if (msg.reconnect && !connected) ensureConnected();
+    //  불러온 순간의 파일 지문도 준다 — 팝업이 지금 디스크와 비교해 '새 버전 적용' 을 띄운다
+    printJob.then(() => sendResponse({ connected, wsUrl: WS_URL, loadedPrint: loadedPrint || '' }));
   } else if (msg.action === 'BINGE_FULLSCREEN') {
     // 정주행: 다음 화 이동 후 창을 전체화면으로 (유저 제스처 불필요한 windows API)
     if (sender.tab && sender.tab.windowId != null) {
@@ -399,6 +539,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (sender.tab && sender.tab.windowId != null) {
       chrome.windows.update(sender.tab.windowId, { state: 'normal' });
     }
+    sendResponse({ ok: true });
+  } else if (msg.action === 'KB_PICKED') {
+    //  탭에서 버튼을 골랐다 → 앱으로 (생김새는 앱이 다시 거른다)
+    if (kbPicking && kbPicking.reqId === msg.reqId) kbPicking = null;
+    rawSend({ type: 'KEYBIND_PICKED', reqId: msg.reqId, site: msg.site, target: msg.target, label: msg.label || '' });
+    sendResponse({ ok: true });
+  } else if (msg.action === 'KB_PICK_CANCELED') {
+    if (kbPicking && kbPicking.reqId === msg.reqId) kbPicking = null;
+    rawSend({ type: 'KEYBIND_PICK_FAIL', reqId: msg.reqId, error: 'canceled' });
+    sendResponse({ ok: true });
+  } else if (msg.action === 'KB_FS') {
+    //  눌렀더니 전체화면이 바뀐 키 — 앱이 기억해 두게
+    rawSend({ type: 'KEYBIND_FS', site: msg.site, id: msg.id });
     sendResponse({ ok: true });
   } else if (msg.action === 'BINGE_END') {
     // 마지막 화 완주 → 앱이 "정주행 끝" 웹훅 전송
@@ -417,7 +570,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     //    정사각본을 쓰면 좌우에 빈 띠가 생겨 좁아 보인다. 그쪽은 원본이 맞다.
     rememberBg(msg.url, msg.bgUrl);
     toSquareDataUrl(msg.dataUrl, msg.bgUrl || bgFor.get(msg.url)).then((dataUrl) => {
-      sendResponse({ ok: rawSend({ type: 'THUMB_BYTES', url: msg.url, dataUrl, rawDataUrl: msg.dataUrl }) });
+      sendResponse({ ok: rawSend({ type: 'THUMB_BYTES', url: msg.url, dataUrl, rawDataUrl: msg.dataUrl, site: msg.site || '' }) });
     });
   } else if (msg.action === 'THUMB_FETCH') {
     // 콘텐트 스크립트가 CORS 로 못 가져온 이미지 — 워커가 직접 받는다
@@ -428,13 +581,48 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     rememberBg(msg.url, msg.bgUrl);
     fetchSquareBytes(msg.url, msg.bgUrl || bgFor.get(msg.url))
-      .then((r) => sendResponse({ ok: rawSend({ type: 'THUMB_BYTES', url: msg.url, dataUrl: r.dataUrl, rawDataUrl: r.rawDataUrl }) }))
+      .then((r) => sendResponse({ ok: rawSend({ type: 'THUMB_BYTES', url: msg.url, dataUrl: r.dataUrl, rawDataUrl: r.rawDataUrl, site: msg.site || '' }) }))
       .catch((e) => {
         LOG('워커 썸네일 페치 실패:', msg.url, e.message);
         sendResponse({ ok: false });
       });
   }
   return true;  // 비동기 sendResponse 위해 채널 유지
+});
+
+// ── 영상 버튼 키: 앱의 '버튼 고르기' 를 그 사이트 탭에 전한다 ──
+//  고를 탭: 그 사이트 카드를 띄우고 있는 탭 → 앞에 있는 탭 → 최근에 본 탭 순. 탭에 키 스크립트가 없으면(새로고침 전) 다음 탭.
+const KB_HOSTS = {
+  ttfc: ['pc.tokusatsu-fc.jp'], imagination: ['imagination.m-78.jp'], youtube: ['www.youtube.com'],
+  disneyplus: ['www.disneyplus.com'], chzzk: ['chzzk.naver.com'], danime: ['animestore.docomo.ne.jp'],
+};
+let kbPicking = null;   // { reqId, tabId }
+async function kbPick(msg) {
+  const reqId = String(msg.reqId || '');
+  const hosts = KB_HOSTS[msg.site];
+  let tabs = [];
+  if (hosts) { try { tabs = await chrome.tabs.query({ url: hosts.map((h) => 'https://' + h + '/*') }); } catch (e) { tabs = []; } }
+  const owner = lastTabBySite.get(msg.site);
+  tabs.sort((a, b) => ((b.id === owner) - (a.id === owner)) || ((b.active ? 1 : 0) - (a.active ? 1 : 0)) || ((b.lastAccessed || 0) - (a.lastAccessed || 0)));
+  for (const t of tabs) {
+    let r = null;
+    try { r = await chrome.tabs.sendMessage(t.id, { action: 'KB_PICK', reqId }); } catch (e) { r = null; }
+    if (!r || !r.ok) continue;
+    kbPicking = { reqId, tabId: t.id };
+    rawSend({ type: 'KEYBIND_PICK_START', reqId });
+    //  사용자가 바로 클릭할 수 있게 그 탭·창을 앞으로
+    chrome.tabs.update(t.id, { active: true }).catch(() => {});
+    chrome.windows.update(t.windowId, { focused: true }).catch(() => {});
+    return;
+  }
+  rawSend({ type: 'KEYBIND_PICK_FAIL', reqId, error: 'notab' });
+}
+//  고르는 중에 그 탭을 닫으면 앱이 3분을 기다리지 않게
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (kbPicking && kbPicking.tabId === tabId) {
+    rawSend({ type: 'KEYBIND_PICK_FAIL', reqId: kbPicking.reqId, error: 'canceled' });
+    kbPicking = null;
+  }
 });
 
 // ── 정주행 모드: 확장 아이콘 배지로 ON 표시 ──
@@ -446,10 +634,17 @@ function syncBingeBadge() {
     chrome.action.setTitle({ title: on ? i18n.t('bg.titleOn') : 'TOKU RPC' });
   });
 }
+//  앱에 정주행 모드 상태 알리기 (팝업·앱·마지막 화 자동 꺼짐 어느 쪽으로 바뀌어도)
+function sendBingeState() {
+  chrome.storage.local.get('bingeMode', (r) => {
+    if (ws && ws.readyState === WebSocket.OPEN) rawSend({ type: 'BINGE_STATE', on: !!r.bingeMode });
+  });
+}
 chrome.storage.onChanged.addListener((ch, area) => {
   if (area !== 'local') return;
   // 언어가 바뀌면 툴팁도 다시 쓴다 (i18n 이 먼저 갱신되도록 한 틱 뒤에)
   if (ch.bingeMode || ch.lang || ch.appLang) setTimeout(syncBingeBadge, 0);
+  if (ch.bingeMode) sendBingeState();
 });
 i18n.refresh(() => syncBingeBadge());
 
@@ -461,8 +656,86 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   else { LOG('알람: 연결 끊김 상태 → 재연결'); ensureConnected(); }
 });
 
-chrome.runtime.onStartup.addListener(() => { LOG('onStartup'); ensureConnected(); });
-chrome.runtime.onInstalled.addListener(() => { LOG('onInstalled'); ensureConnected(); });
+// ── 새 버전 적용 (2026-10-15) ──
+//  압축 해제로 로드한 확장은 파일을 바꿔도 다시 불러오기 전까지 옛 코드로 돈다.
+//  불러온 순간의 파일 지문(version-print.js)을 저장해 두고, 디스크 지문과 달라지면
+//   · 지원 사이트 탭이 하나도 없으면 → 스스로 다시 불러온다 (끊길 탭이 없어 보이는 변화가 없다)
+//   · 열려 있으면 → 팝업이 '새 버전 적용' 을 띄운다 (누르면 다시 불러오고 그 탭들을 새로고침)
+//  ⚠ 'chrome_update' 등 다른 이유의 onInstalled 에서는 지문을 새로 저장하지 않는다 —
+//    그때 도는 워커는 디스크 것이 아니라 마지막으로 불러온 코드라서, 저장하면 새 버전을 놓친다.
+const UPDATE_ALARM = 'toku-rpc-update-check';
+const AUTO_RELOAD_GAP_MS = 10 * 60 * 1000;   // 자동 적용이 되풀이되지 않게 (10분에 한 번까지)
+let loadedPrint = '';
+let printFresh = false;            // 이번에 불러오며 새로 잰 지문이면 저장소의 옛 값으로 덮지 않는다
+let printJob = chrome.storage.local.get('loadedPrint')
+  .then((r) => { if (!printFresh) loadedPrint = (r && r.loadedPrint) || ''; })
+  .catch(() => {});
 
+function siteUrlPatterns() {
+  const set = new Set();
+  for (const cs of chrome.runtime.getManifest().content_scripts || []) for (const m of cs.matches || []) set.add(m);
+  return [...set];
+}
+
+async function rememberLoadedPrint() {
+  const p = await self.TOKU_PRINT();
+  printFresh = true;
+  loadedPrint = p;
+  await chrome.storage.local.set({ loadedPrint: p });
+  LOG('불러온 코드 지문 저장', p ? p.slice(0, 8) : '(못 읽음)');
+  refreshTabsIfAsked().catch((e) => LOG('사이트 탭 새로고침 실패', e && e.message));
+}
+
+//  팝업의 '새 버전 적용' 으로 다시 불러왔다면 열린 사이트 탭을 새로고침해 새 content script 를 붙인다.
+//  (다시 불러오면 그 탭들의 옛 스크립트는 끊겨, 새로고침 전까지 카드가 안 뜬다)
+async function refreshTabsIfAsked() {
+  const r = await chrome.storage.local.get('refreshTabsAfterUpdate');
+  if (!r.refreshTabsAfterUpdate) return;
+  await chrome.storage.local.remove('refreshTabsAfterUpdate');
+  if (Date.now() - r.refreshTabsAfterUpdate > 60000) return;   // 오래된 표시는 무시
+  const tabs = await chrome.tabs.query({ url: siteUrlPatterns() });
+  for (const t of tabs) {
+    if (t.discarded) continue;   // 버려진 탭은 다시 열 때 어차피 새로 불러온다
+    chrome.tabs.reload(t.id).catch(() => {});
+  }
+  LOG('새 버전 적용 — 사이트 탭 새로고침', tabs.filter((t) => !t.discarded).length + '개');
+}
+
+async function checkUpdate() {
+  await printJob;
+  if (!loadedPrint) return;                    // 불러온 지문을 모르면 판단하지 않는다
+  const now = await self.TOKU_PRINT();
+  if (!now || now === loadedPrint) return;
+  //  파일을 고치는 도중(여러 파일 중 일부만 바뀜)에 불러오지 않게, 같은 새 지문을 두 번 연속(5분 간격) 볼 때만 적용한다
+  const r = await chrome.storage.local.get(['autoReloadAt', 'seenPrint']);
+  const seen = r.seenPrint || {};
+  if (seen.p !== now) { await chrome.storage.local.set({ seenPrint: { p: now, at: Date.now() } }); return; }
+  if (Date.now() - (seen.at || 0) < 4 * 60 * 1000) return;
+  const tabs = await chrome.tabs.query({ url: siteUrlPatterns() });
+  if (tabs.length) return;                     // 보고 있는 탭을 끊지 않는다 — 팝업에서 적용
+  if (Date.now() - (r.autoReloadAt || 0) < AUTO_RELOAD_GAP_MS) return;
+  await chrome.storage.local.set({ autoReloadAt: Date.now() });
+  LOG('새 버전 자동 적용 — 열린 사이트 탭이 없음');
+  chrome.runtime.reload();
+}
+
+//  워커가 다시 깨어날 때마다 알람을 새로 만들면 주기가 처음부터 다시 세어져 영영 안 울릴 수 있다 → 없을 때만
+chrome.alarms.get(UPDATE_ALARM, (a) => { if (!a) chrome.alarms.create(UPDATE_ALARM, { periodInMinutes: 5 }); });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === UPDATE_ALARM) checkUpdate().catch((e) => LOG('새 버전 확인 실패', e && e.message));
+});
+
+chrome.runtime.onStartup.addListener(() => { LOG('onStartup'); noteSw('onStartup'); ensureConnected(); });
+chrome.runtime.onInstalled.addListener((d) => {
+  LOG('onInstalled', d && d.reason);
+  noteSw('onInstalled ' + (d && d.reason));
+  ensureConnected();
+  if (d && (d.reason === 'install' || d.reason === 'update')) {
+    printJob = rememberLoadedPrint().catch((e) => LOG('지문 저장 실패', e && e.message));
+  }
+});
+
+//  진단 한 줄 때문에 워커 맨 위에서 예외가 나면 아래 연결까지 다 멈춘다 → 어떤 경우에도 던지지 않게
+try { noteSw('워커 시작 v' + chrome.runtime.getManifest().version); } catch (e) { /* 무시 */ }
 ensureConnected();
 LOG('서비스 워커 시작됨');

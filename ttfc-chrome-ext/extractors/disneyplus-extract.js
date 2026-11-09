@@ -91,6 +91,8 @@
   //  디즈니+ 는 SPA 라 이 관찰자는 문서가 살아있는 동안 계속 동작한다.
   let harvestTimer = null;
   const observer = new MutationObserver(() => {
+    //  확장이 다시 불러와져 이 탭의 스크립트가 끊겼으면(content.js 가 표시) 관찰을 끝낸다
+    if (self.TOKU_DEAD) { observer.disconnect(); return; }
     if (harvestTimer) return;                 // 폭주하는 DOM 변경을 묶어서 처리
     harvestTimer = setTimeout(() => {
       harvestTimer = null;
@@ -113,12 +115,14 @@
 
   // ── 페이지 월드에서 오는 재생 상태 ──
   let snap = null;
+  let snapPath = '';   // 그 상태를 받았을 때의 주소 — 일시정지 중엔 나이 대신 이걸로 판단한다
   let lastKey = '';
   window.addEventListener('message', (e) => {
     if (e.source !== window) return;
     const d = e.data;
     if (!d || d.channel !== CHANNEL) return;
     snap = d.payload || null;
+    snapPath = location.pathname;
     // 작품·화·재생상태가 바뀌었으면 다음 주기를 기다리지 않고 바로 올린다
     const key = snap ? [snap.title, snap.subtitle, snap.isPlaying, snap.ended].join('|') : '';
     if (key !== lastKey) {
@@ -130,17 +134,37 @@
   try { window.postMessage({ channel: CHANNEL + '_REQ' }, location.origin); } catch (e) {}
 
   // 부스터를 MAIN 월드에 전달한다 (거긴 chrome.storage 를 못 본다)
-  function pushBooster(on) {
-    try { window.postMessage({ channel: CHANNEL + '_BOOST', on: !!on }, location.origin); } catch (e) {}
+  //  단계에 맞는 주기(ms)를 그대로 넘긴다 — 값의 출처를 content.js 한 곳으로 모은다
+  function pushLevel(level) {
+    const L = (self.TOKU_LEVELS && self.TOKU_LEVELS[level]) || null;
+    const ms = L ? L.poll : 0;
+    try {
+      window.postMessage({ channel: CHANNEL + '_BOOST', ms: ms,
+        on: level === 'max' || level === 'high' }, location.origin);
+    } catch (e) {}
+  }
+  function levelFrom(r) {
+    if (!r) return 'normal';
+    if (self.TOKU_LEVELS && self.TOKU_LEVELS[r.boostLevel]) return r.boostLevel;
+    return r.booster ? 'high' : 'normal';
   }
   try {
-    chrome.storage.local.get('booster', (r) => pushBooster(r && r.booster));
+    chrome.storage.local.get(['boostLevel', 'booster'], (r) => pushLevel(levelFrom(r)));
     chrome.storage.onChanged.addListener((ch, area) => {
-      if (area === 'local' && ch.booster) pushBooster(ch.booster.newValue);
+      if (area !== 'local') return;
+      if (ch.boostLevel) pushLevel(ch.boostLevel.newValue);
+      else if (ch.booster) pushLevel(ch.booster.newValue ? 'high' : 'normal');
     });
   } catch (e) { /* 저장소 없이도 기본 주기로 동작한다 */ }
 
-  const fresh = () => (snap && Date.now() - snap.at < 5000) ? snap : null;
+  //  ⚠ 페이지 쪽은 값이 바뀔 때만 보낸다. 일시정지 중엔 아무것도 안 바뀌어 5초 뒤 상태가 버려졌고,
+  //    카드가 문서 제목('Disney+')으로 떨어지며 화·썸네일이 빠졌다(정주행 웹훅까지 엉뚱하게 갔다).
+  //    → 재생 중엔 그대로 5초로 죽은 페이지를 잡고, 멈춘 상태는 같은 주소에 있는 동안 계속 믿는다.
+  const fresh = () => {
+    if (!snap) return null;
+    if (Date.now() - snap.at < 5000) return snap;
+    return (!snap.isPlaying && snapPath === location.pathname) ? snap : null;
+  };
 
   // ── URL 판정 ──
   const path = () => location.pathname;
@@ -228,6 +252,8 @@
     return { number: s, title: '' };
   }
 
+  const HOME = 'https://www.disneyplus.com/';
+
   window.TOKU_SITE = {
     id: 'disneyplus',
     siteName: SITE_NAME,
@@ -281,6 +307,10 @@
       let detail = '';
       let banner = '';
       let bannerBg = '';   // 있으면 확장 워커가 이 배경 위에 banner 를 얹어 합성한다
+        //  ⚠ 검색 페이지에서는 주소를 홈으로 바꾼다. 안 그러면 content.js 가
+        //    location.href 를 그대로 쓰고, 그게 '사이트에서 보기' 버튼이 되어
+        //    내가 입력한 검색어가 프로필을 보는 모든 사람에게 공개된다.
+        let url = '';
 
       // 문서 제목이 "작품명 | 디즈니+" 형식 (og 태그·JSON-LD 는 없다)
       const docName = (document.title || '').split('|')[0].trim();
@@ -301,7 +331,7 @@
       else if (/^\/browse\/series/.test(p)) page = T('page.seriesList');
       else if (/^\/browse\/originals/.test(p)) page = T('page.originals');
       else if (/^\/browse\/watchlist/.test(p)) page = T('page.watchlist');
-      else if (/^\/browse\/search/.test(p)) page = T('page.search');
+      else if (/^\/browse\/search/.test(p)) { page = T('page.search'); url = HOME; }
       else if (/^\/browse\/?$/.test(p)) page = T('page.workList');
       else if (p === '/home' || p === '/') page = T('page.home');
       else {
@@ -322,7 +352,7 @@
       }
 
       if (detail === page) detail = '';
-      return { page, detail, banner, bannerBg };
+      return { page, detail, banner, bannerBg, url };
     },
 
     // 정주행: 디즈니+ 는 연속 재생이 사이트 기본 기능이라 우리가 이동시키지 않는다.

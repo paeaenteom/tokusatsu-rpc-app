@@ -1,0 +1,3 @@
+// 아이콘은 기존 앱 것(ttfc-app/assets/icon.ico 의 복사본)을 쓴다
+1 ICON "icon.ico"
+1 24 "app.manifest"

@@ -140,12 +140,15 @@
   //  ※ 구 방식(再生中 마커에서 부모로 걸어 올라가기)은 리스트 컨테이너까지 올라가
   //    "첫 번째" 이미지(=1화 썸네일)를 집는 버그가 있었음 (젠카이저 3화에서 재현 확인).
   let _epThumbCache = { key: '', src: '' };  // 에피소드 단위 캐시 (2초 주기 전체 스캔 방지)
+  //  못 찾은 것도 1초는 기억한다 — 카드가 없는 화면(라이브 등)에서 틱(MAX 0.15초)마다 링크 전체를 다시 훑지 않게
+  let _epThumbMiss = { key: '', at: 0 };
 
   function currentEpisodeThumb() {
     const m = location.pathname.match(/\/(movie-stories|live-deliveries)\/(\d+)/);
     if (!m) return '';
     const key = m[1] + '/' + m[2];
     if (_epThumbCache.key === key && _epThumbCache.src) return _epThumbCache.src;
+    if (_epThumbMiss.key === key && Date.now() - _epThumbMiss.at < 1000) return '';
     const re = new RegExp('/' + m[1] + '/' + m[2] + '(\\?|$)');
     for (const a of document.querySelectorAll('a')) {
       const href = a.getAttribute('href') || '';
@@ -158,21 +161,28 @@
         }
       }
     }
-    return '';  // 못 찾으면 캐시 안 함 — 렌더 완료 후 재시도
+    _epThumbMiss = { key, at: Date.now() };
+    return '';  // 못 찾으면 캐시 안 함 — 렌더 완료 후 재시도 (1초 뒤)
   }
 
   // 폴백: "再生中" 마커가 붙은 카드(<a>) 내부의 이미지만 사용 (컨테이너로 안 올라감)
+  //  p·span·div 전부를 읽는 가장 비싼 검색이라 같은 주소에서는 1초 동안 결과를 다시 쓴다
+  let _markerCache = { key: '', at: 0, src: '' };
   function markerThumbnail() {
+    const key = location.pathname;
+    if (_markerCache.key === key && Date.now() - _markerCache.at < 1000) return _markerCache.src;
+    let src = '';
     for (const el of document.querySelectorAll('p, span, div')) {
       if (el.children.length === 0 && (el.textContent || '').trim() === '再生中') {
         const card = el.closest('a');
         const img = card && card.querySelector('img');
-        const src = img ? (img.currentSrc || img.src || '') : '';
-        if (src.includes('cloudfront.net')) return src;
-        return '';
+        const s = img ? (img.currentSrc || img.src || '') : '';
+        if (s.includes('cloudfront.net')) src = s;
+        break;
       }
     }
-    return '';
+    _markerCache = { key, at: Date.now(), src };
+    return src;
   }
 
   // og:image — 컨텐츠 이미지(cloudfront)일 때만 (공통 사이트 OGP 제외)
@@ -184,6 +194,8 @@
   // ════════════════════════════════════════
   //  인터페이스
   // ════════════════════════════════════════
+  const HOME = 'https://pc.tokusatsu-fc.jp/';
+
   window.TOKU_SITE = {
     id: 'ttfc',
     siteName: '東映特撮ファンクラブ',
@@ -217,6 +229,11 @@
           episodeTitle: ep.number ? ep.title : (seriesName === title ? '' : title),
           episodeNumber: ep.number,
           thumbnail,
+          //  ⚠ 라이브라는 사실을 앱에 알려야 한다. 위에서 경로로 정확히 판정해 놓고도
+          //    이 값을 빼먹어, 앱이 일반 영상으로 보고 끝나는 시각이 있는 진행 바를 그렸다.
+          //    라이브는 끝이 정해져 있지 않으니 경과 시간으로 그려야 한다.
+          //    (유튜브는 같은 값을 보내고 있었다 — 사이트 간 빈칸이었다)
+          isLive: true,
         };
       }
 
@@ -263,9 +280,17 @@
       let page = T('page.browsing');
       let detail = '';
       let banner = '';
+      //  ⚠ 검색 페이지에서는 주소를 홈으로 바꾼다. 안 그러면 content.js 가
+      //    location.href 를 그대로 쓰고, 그게 '사이트에서 보기' 버튼이 되어
+      //    내가 입력한 검색어가 프로필을 보는 모든 사람에게 공개된다.
+      //    (유튜브는 이미 같은 이유로 막아 뒀다 — 나머지 사이트도 맞춘다)
+      let url = '';
 
       // 에피소드 선택: /movies/{id}/movie-stories — 배너는 페이지 메인 비주얼(og:image)
-      if (/\/movies\/\d+\/movie-stories\/?$/.test(path)) {
+      //  ⚠ 라이브도 같은 모양이다(/lives/{id}/live-deliveries). 예전에는 영화만 잡아
+      //    라이브 작품의 회차 목록이 그냥 '둘러보는 중' 으로 떨어졌다 (전수 검사에서 발견).
+      //    회차 하나를 고르면(/live-deliveries/{id}) 재생 페이지라 여기 오지 않는다.
+      if (/\/(movies\/\d+\/movie-stories|lives\/\d+\/live-deliveries)\/?$/.test(path)) {
         page = T('page.work');
         detail = ogSeriesName();
         banner = ogContentImage();
@@ -293,7 +318,7 @@
         if (s) banner = s.banner;
       }
       else if (/\/articles\/\d+/.test(path)) { page = T('page.article'); detail = ogSeriesName(); }
-      else if (path.includes('/search')) page = T('page.search');
+      else if (path.includes('/search')) { page = T('page.search'); url = HOME; }
       else if (path.includes('/favorite')) page = T('page.favorite');
       else if (path.includes('/histories') || path.includes('/history')) page = T('page.history');
       else if (path.includes('/purchase')) page = T('page.purchase');
@@ -303,9 +328,44 @@
       else if (path === '/new') page = T('page.new');
       else if (path === '/' || path === '') page = T('page.home');
 
-      return { page, detail, banner };
+      return { page, detail, banner, url };
     },
   };
+
+  // ── 스킵 버튼 보호 (2026-11-08 유빈 제보) ──
+  //  TTFC 플레이어의 스킵 버튼(#player-skip-btn: オープニング/エンディングスキップ)을 누르면 재생 중이면 멈추고,
+  //  멈춰 있으면 재생된다 (확장과 상관없이 사이트 쪽 — 확장은 스킵 때 재생·정지를 건드리지 않는다).
+  //  스킵은 위치만 옮기는 버튼이니, 누른 직후(1.5초 안) 재생 상태가 뒤집히면 한 번 원래대로 돌린다.
+  //  · 마우스로 누른 것·키 설정으로 누른 것(keybind.js 의 click) 둘 다
+  //  · 그 사이 사용자가 직접 다른 곳을 누르거나 키를 누르면 그건 본인 뜻이니 손대지 않는다
+  //  · 끝까지 가서 멈춘 것(ended — 엔딩 스킵이 끝으로 보낸 경우)은 되돌리지 않는다 (다시 재생하면 처음부터라 정주행이 꼬임)
+  //  @@skip-guard-start
+  function installSkipGuard(doc, win, getVideo, now) {
+    const WINDOW_MS = 1500;
+    let guard = null;   // { v, paused, until }
+    const isSkip = (t) => !!(t && typeof t.closest === 'function' && t.closest('#player-skip-btn'));
+    doc.addEventListener('click', (e) => {
+      if (!isSkip(e.target)) { if (e.isTrusted) guard = null; return; }
+      const v = getVideo();
+      guard = v ? { v, paused: v.paused, until: now() + WINDOW_MS } : null;
+    }, true);
+    //  키는 window 에서 — keybind.js(이 파일 뒤에 실림)가 window 잡기 단계에서 키를 삼키므로 그보다 먼저 들어야 한다
+    win.addEventListener('keydown', (e) => { if (e.isTrusted) guard = null; }, true);
+    const onChange = (e) => {
+      const g = guard;
+      if (!g || e.target !== g.v) return;
+      if (now() > g.until || g.v.ended) { guard = null; return; }
+      if (g.v.paused === g.paused) return;
+      guard = null;   //  한 번만
+      if (g.paused) g.v.pause();
+      else { const p = g.v.play(); if (p && p.catch) p.catch(() => {}); }
+    };
+    //  play·pause 는 거품이 안 올라오는 이벤트라 잡기(capture) 단계에서 받는다
+    doc.addEventListener('play', onChange, true);
+    doc.addEventListener('pause', onChange, true);
+  }
+  //  @@skip-guard-end
+  installSkipGuard(document, window, () => window.TOKU_SITE.getVideoElement(), () => Date.now());
 
   console.log('[TOKU RPC] TTFC 추출기 로드됨');
 })();

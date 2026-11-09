@@ -104,6 +104,8 @@
   // ════════════════════════════════════════
   //  인터페이스
   // ════════════════════════════════════════
+  const HOME = 'https://imagination.m-78.jp/';
+
   window.TOKU_SITE = {
     id: 'imagination',
     siteName: SITE_NAME,
@@ -219,6 +221,11 @@
       let page = T('page.browsing');
       let detail = '';
       let banner = '';
+      //  ⚠ 검색 페이지에서는 주소를 홈으로 바꾼다. 안 그러면 content.js 가
+      //    location.href 를 그대로 쓰고, 그게 '사이트에서 보기' 버튼이 되어
+      //    내가 입력한 검색어가 프로필을 보는 모든 사람에게 공개된다.
+      //    (유튜브는 이미 같은 이유로 막아 뒀다 — 나머지 사이트도 맞춘다)
+      let url = '';
       const keyArt = keyArtImage();
 
       // 영상 페이지인데 video 미준비 → isPlaybackUrl이 잡으므로 여기 안 옴
@@ -262,14 +269,14 @@
       else if (/^\/recommend/.test(path)) {
         page = T('page.recommend');
       }
-      else if (path.startsWith('/search')) page = T('page.search');
+      else if (path.startsWith('/search')) { page = T('page.search'); url = HOME; }
       else if (path.startsWith('/favorite')) page = T('page.favorite');
       else if (path.startsWith('/faq') || path.startsWith('/guide') || path.startsWith('/howtocube')) page = T('page.help');
       else if (path.startsWith('/auth')) page = T('page.login');
       else if (path === '/' || path === '') page = T('page.home');
 
       if (detail === page) detail = '';
-      return { page, detail, banner };
+      return { page, detail, banner, url };
     },
   };
 

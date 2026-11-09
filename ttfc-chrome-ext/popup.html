@@ -49,6 +49,7 @@ body {
 .testbtn:hover { background: rgba(255,194,51,0.22); }
 .testbtn:disabled { opacity: .4; cursor: default; }
 .testmsg { font-size: 10px; color: #8a8a9a; min-height: 14px; margin-bottom: 8px; text-align: center; }
+.fixmsg { text-align: left; line-height: 1.5; margin-bottom: 6px; }
 .info { font-size: 11px; color: #888; line-height: 1.6; }
 .info a { color: #4CAF50; text-decoration: none; }
 .footer { margin-top: 10px; font-size: 10px; color: #555; text-align: center; }
@@ -74,6 +75,16 @@ body {
     <span data-i18n="popup.checking"></span>
   </div>
 
+  <div id="fixBox" hidden>
+    <div class="testmsg fixmsg" data-i18n="popup.fixHint"></div>
+    <button id="reloadExt" class="testbtn" data-i18n="popup.reloadExt"></button>
+  </div>
+
+  <div id="updateBox" hidden>
+    <div class="testmsg fixmsg" data-i18n="popup.updateHint"></div>
+    <button id="applyUpdate" class="testbtn" data-i18n="popup.applyUpdate"></button>
+  </div>
+
   <div class="binge">
     <div class="bl">
       <span class="bt" data-i18n="popup.bingeTitle"></span>
@@ -94,6 +105,8 @@ body {
     2. <span data-i18n="popup.step2"></span><br>
     &nbsp;&nbsp;· <a href="https://pc.tokusatsu-fc.jp/" target="_blank">東映特撮ファンクラブ</a><br>
     &nbsp;&nbsp;· <a href="https://imagination.m-78.jp/" target="_blank">TSUBURAYA IMAGINATION</a><br>
+    &nbsp;&nbsp;· <a href="https://chzzk.naver.com/" target="_blank">치지직 CHZZK</a><br>
+    &nbsp;&nbsp;· <a href="https://animestore.docomo.ne.jp/animestore/" target="_blank">dアニメストア</a><br>
     3. <span data-i18n="popup.step3"></span>
   </div>
 
@@ -113,6 +126,7 @@ body {
 <script src="locales/en.js"></script>
 <script src="locales/ja.js"></script>
 <script src="i18n.js"></script>
+<script src="version-print.js"></script>
 <script src="popup.js"></script>
 </body>
 </html>

@@ -129,12 +129,23 @@
   }
   hookVideo();
   // 플레이어는 SPA 라 나중에 붙고 교체되기도 한다
-  new MutationObserver(hookVideo).observe(document.documentElement, { childList: true, subtree: true });
+  //  DOM 변화마다 문서 전체를 찾으면 비싸다 → 0.3초에 한 번으로 묶는다 (그 사이 변화는 폴링이 받친다)
+  let hookTimer = null;
+  new MutationObserver(() => {
+    if (hookTimer) return;
+    hookTimer = setTimeout(() => { hookTimer = null; hookVideo(); }, 300);
+  }).observe(document.documentElement, { childList: true, subtree: true });
 
   // 격리 월드가 늦게 붙어도 첫 값을 받을 수 있게, 요청이 오면 즉시 한 번 더 보낸다
   window.addEventListener('message', (e) => {
     if (e.source !== window || !e.data) return;
-    if (e.data.channel === CHANNEL + '_BOOST') { setPoll(e.data.on ? POLL_BOOST : POLL_MS); return; }
+    if (e.data.channel === CHANNEL + '_BOOST') {
+      //  격리 월드가 단계에 맞는 주기(ms)를 직접 준다. 단계를 모르는 예전 코드가
+      //  on 만 보내면 예전처럼 두 단계로 동작한다.
+      const ms = Number(e.data.ms);
+      setPoll(ms > 0 ? ms : (e.data.on ? POLL_BOOST : POLL_MS));
+      return;
+    }
     if (e.data.channel !== CHANNEL + '_REQ') return;
     lastJson = '';
     tick();

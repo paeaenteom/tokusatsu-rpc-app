@@ -1,10 +1,11 @@
-# 의존성 / 빌드 산출물
-node_modules/
-dist/
-dist-release/
+# 빌드 산출물 (build.bat → toku-native\build)
+toku-native/build/
+*.exe
+*.o
+*.res
 *.log
 
-# 개인 설정값 — 웹훅 주소 등 (절대 커밋 금지)
+# 개인 설정값 — App ID·웹훅 주소 등 (절대 커밋 금지)
 secrets.local.json
 secrets.json
 
@@ -12,9 +13,9 @@ secrets.json
 # 잃어버리면 기존 사용자의 자동 업데이트가 끊긴다
 *.pem
 
+# 디자인 도구 작업 파일
+.impeccable/
+
 # OS
 .DS_Store
 Thumbs.db
-
-# 빌드에서 제외되는 죽은 코드 (package.json build.files 의 !src/_unused/**)
-ttfc-app/src/_unused/

@@ -22,6 +22,26 @@
   // 화면에 보이는 문구는 i18n 을 거친다 (i18n.js 가 manifest 순서상 먼저 로드됨)
   const T = (key, vars) => (self.TOKU_I18N ? self.TOKU_I18N.t(key, vars) : key);
 
+  // ── 확장이 다시 불러와졌을 때 (2026-10-15) ──
+  //  확장을 다시 불러오거나 업데이트하면, 이미 열려 있던 탭의 이 스크립트는 끊긴 확장 소속으로 남는다
+  //  (chrome.runtime.id 가 사라진다). 새 확장은 그 탭을 새로고침하기 전까지 다시 들어오지 않으므로,
+  //  그대로 두면 틱마다(MAX 0.15초) 페이지를 훑고 전송 실패만 되풀이한다 → 알아채는 즉시 주기 작업을 멈춘다.
+  const RUNTIME_ID = (() => { try { return chrome.runtime.id || ''; } catch (e) { return ''; } })();
+  const orphanStops = [];        // 멈출 때 부를 정리 함수들 (타이머·관찰자)
+  let orphaned = false;
+  function isOrphaned() {
+    if (orphaned) return true;
+    if (!RUNTIME_ID) return false;   // 처음부터 id 가 없는 환경(노드 하네스)에선 판단하지 않는다
+    let id = '';
+    try { id = chrome.runtime.id || ''; } catch (e) { id = ''; }
+    if (id) return false;
+    orphaned = true;
+    self.TOKU_DEAD = true;           // 추출기 쪽 관찰자도 이걸 보고 멈춘다
+    LOG('확장이 다시 불러와짐 — 이 탭의 옛 스크립트를 멈춘다 (탭을 새로고침하면 새 버전이 붙는다)');
+    for (const stop of orphanStops) { try { stop(); } catch (e) {} }
+    return true;
+  }
+
   // ── 썸네일 바이트 추출 (디스코드가 직접 못 불러오는 이미지 전용) ──
   //  imagination CDN(static-constents)과 TTFC 메인 도메인(pc.tokusatsu-fc.jp)은
   //  외부 서버 페치를 차단해 디스코드 프록시가 이미지를 못 불러온다("?").
@@ -38,6 +58,11 @@
   const thumbFails = new Map();
   const RETRY_GAP_MS = 3000;   // 재시도 최소 간격
   const MAX_TRIES = 5;         // 이 횟수를 '간격을 두고' 넘기면 포기
+  //  ⚠ 포기를 '영구' 로 두면 안 된다. 워커가 잠들거나 앱이 잠깐 끊기는 것만으로도
+  //    5번이 금방 차고, 그러면 그 이미지는 브라우저를 새로 켤 때까지 영영 안 뜬다.
+  //    실측 2026-08-28: 아침엔 뜨던 썸네일이 저녁에 전부 안 뜨다가 앱 재시작으로 돌아왔다
+  //    (재시작 때 RESET_THUMBS 가 기록을 지우기 때문). 그래서 시간이 지나면 다시 시도한다.
+  const GIVEUP_MS = 10 * 60 * 1000;   // 포기 상태를 유지하는 시간
 
   // 이 탭(사이트)이 가져올 수 있는 이미지인지 — NEED_THUMB 브로드캐스트 필터용
   function ownsImage(url) {
@@ -85,8 +110,13 @@
     if (!needsRehost(url) || sentThumbs.has(url)) return;
     const rec = thumbFails.get(url);
     if (rec) {
-      if (rec.n >= MAX_TRIES) return;                      // 간격을 두고도 계속 실패 → 포기
-      if (Date.now() - rec.at < RETRY_GAP_MS) return;      // 방금 실패했으면 잠시 쉰다
+      if (rec.n >= MAX_TRIES) {
+        //  포기하되 영구는 아니다 — 충분히 지났으면 처음부터 다시 해 본다
+        if (Date.now() - rec.at < GIVEUP_MS) return;
+        thumbFails.delete(url);
+      } else if (Date.now() - rec.at < RETRY_GAP_MS) {
+        return;                                            // 방금 실패했으면 잠시 쉰다
+      }
     }
     // 메모리 상한 — 초과 시 리셋 (재전송돼도 앱의 _thumbCache/_thumbPending이 중복 방지)
     if (sentThumbs.size > 100) sentThumbs.clear();
@@ -100,11 +130,12 @@
     };
 
     // 워커가 직접 받는다 — host_permissions 라 CORS 를 안 탄다
-    const viaWorker = () => chrome.runtime.sendMessage({ action: 'THUMB_FETCH', url, bgUrl })
+    //  site 를 실어 보낸다 — 앱이 카드를 못 띄우는 사이트(애플리케이션 ID 없음)의 사진은 올리지 않는다
+    const viaWorker = () => chrome.runtime.sendMessage({ action: 'THUMB_FETCH', url, bgUrl, site: SITE.id })
       .then((r) => { if (!(r && r.ok)) throw new Error('워커 실패'); LOG('썸네일 바이트 전송 OK (워커)'); });
     // 페이지 오리진에서 받는다 — 같은 사이트 이미지는 이쪽이 한 단계 짧다
     const viaPage = () => extractBytes(url)
-      .then((dataUrl) => chrome.runtime.sendMessage({ action: 'THUMB_BYTES', url, dataUrl, bgUrl }))
+      .then((dataUrl) => chrome.runtime.sendMessage({ action: 'THUMB_BYTES', url, dataUrl, bgUrl, site: SITE.id }))
       .then((r) => {
         if (r && r.ok) { LOG('썸네일 바이트 전송 OK'); return; }
         sentThumbs.delete(url);   // 앱 미연결 등 → 다음 틱에 재시도. 실패로 세지 않는다
@@ -176,6 +207,8 @@
   // 영상 페이지면 "정주행 대기 중" 상태를 배지로 표시
   function bingeStatusBadge() {
     if (!bingeMode) return;
+    //  정주행은 TTFC·IMAGINATION 만 한다 — 유튜브·디즈니+ 에 '끝나면 다음 화' 를 띄우면 틀린 안내다
+    if (SITE.id !== 'ttfc' && SITE.id !== 'imagination') return;
     if (SITE.isPlaybackUrl()) bingeBadge(T('badge.onNext'), { hold: 3500 });
     else bingeBadge(T('badge.onShort'), { hold: 3500 });
   }
@@ -294,7 +327,7 @@
 
   // 영상 요소 교체 감시 — 전체화면이 방금 풀렸다면 그건 자동 전환이 원인
   let lastVideoEl = null;
-  setInterval(() => {
+  const swapWatch = setInterval(() => {
     if (SITE.id !== 'imagination') return;
     const v = SITE.getVideoElement();
     if (v && v !== lastVideoEl) {
@@ -321,6 +354,7 @@
       }
     }
   }, 700);
+  orphanStops.push(() => clearInterval(swapWatch));
 
   // 유사 전체화면 해제 (윈도우 풀스크린 + CSS 원복)
   function bingeFsRestore() {
@@ -338,10 +372,16 @@
     if (hadFs) chrome.runtime.sendMessage({ action: 'BINGE_RESTORE' }).catch(() => {});
   }
 
+  //  키 설정(keybind.js)이 전체화면 키로 유사 전체화면도 풀 수 있게 열어 둔다 (같은 콘텐트 스크립트 세계)
+  self.__tokuPseudoFs = { active: isPseudoFs, exit: bingeFsRestore };
+
   // 영상이 끝까지 재생됨 → 다음 화 이동 / 마지막 화면 정주행 종료
   function onVideoEnded(opts) {
     const o = opts || {};
     if (!bingeMode && !o.test) return;
+    //  유튜브·디즈니+ 는 사이트가 다음 영상을 알아서 튼다. 정주행을 넘기거나 끝내지 않는다
+    //  (예전엔 유튜브 영상 하나가 끝나면 '정주행 끝' 웹훅이 올라가고 정주행 모드가 통째로 꺼졌다).
+    if (!o.test && SITE.id !== 'ttfc' && SITE.id !== 'imagination') return false;
     if (bingeMoving) return;          // 이동 처리 중복 방지
     // 이 에피소드의 진행 권한을 선점 (중복 트리거·낡은 타이머 전부 여기서 걸러짐)
     if (!o.test && !o.forceMove && !claimAdvance('영상 종료')) return;
@@ -465,17 +505,24 @@
   let lastSentAt = 0;
   let navStartedAt = Date.now();
   const BROWSING_HEARTBEAT = 10000; // 변경 없어도 10초마다 재전송 (SW keepalive 겸용)
+  //  가려진 채 둘러보기 카드를 스스로 지웠는지. 지운 뒤 다음 틱이 같은 카드를 되살리지 않게 한다
+  //  (예전엔 15초 뒤 잠깐 꺼졌다가 경과 시간이 0:00 으로 돌아간 채 다시 떴다).
+  let hiddenCleared = false;
+  //  주소 바뀜 감지용. lastUrl 은 추출기가 고른 주소(유튜브 검색은 홈 주소)라 비교에 못 쓴다.
+  let seenHref = location.href;
 
   // ── 상태 수집 ──
   function collectState() {
-    const video = SITE.getVideoElement();
+    //  둘러보기 페이지에선 영상 요소·재생 정보를 찾지 않는다 (쓰지도 않으면서 틱마다 DOM 을 뒤졌다)
+    const playback = SITE.isPlaybackUrl();
+    const video = playback ? SITE.getVideoElement() : null;
     const hasRealVideo = video && video.readyState > 0 && video.duration > 0 && isFinite(video.duration);
 
     // 사이트가 재생 정보를 직접 주는 경우.
     //  디즈니+ 는 MSE 스트리밍이라 video.duration 이 Infinity 라서 위 판정을 통과하지 못한다.
     //  (총 길이는 플레이어 상태 객체에만 있다 — 추출기 주석 참고)
     //  주지 않는 사이트는 null 이므로 기존 동작 그대로다.
-    const pb = (typeof SITE.getPlayback === 'function') ? SITE.getPlayback() : null;
+    const pb = (playback && typeof SITE.getPlayback === 'function') ? SITE.getPlayback() : null;
     const timeOf = (k, fallback) => (pb ? Math.floor(pb[k] || 0) : fallback);
 
     //  진행 바 기준점: "이 영상의 0초가 몇 시각이었나".
@@ -499,7 +546,7 @@
     // 영상 페이지 URL이면 video 로드 전이라도 '시청 중'으로 표시
     //  → 들어가는 순간 작품/에피소드 정보(og:title 기반)가 뜨고,
     //    실제로 재생하면 시간바 + 재생상태가 채워진다.
-    if (SITE.isPlaybackUrl()) {
+    if (playback) {
       const info = SITE.extractVideo();
       let epTitle = info.episodeTitle || '';
       if (epTitle && epTitle === info.seriesName) epTitle = '';
@@ -520,11 +567,14 @@
         // 진행 바 기준점 — 모든 사이트 공통. 앱이 '지금 - 받은 초' 로 만들면
         //  소수점 버림 + 전송 지연이 그대로 오차가 된다 (실측: 카드가 1초 앞섰다).
         startedAtMs: anchorMs(),
-        binge: bingeMode,
+        binge: bingeMode && (SITE.id === 'ttfc' || SITE.id === 'imagination'),
         url: location.href,
         // 라이브 (추출기가 안 주면 undefined → false/0. 다른 사이트는 영향 없다)
         isLive: !!info.isLive,
         liveStartedAt: info.liveStartedAt || 0,
+        //  재생 배속 — 추출기가 재생 정보에 실어 줄 때만(그 사이트는 기준점도 배속에 맞춰 계산한다).
+        //  안 주는 사이트는 1 이라 앱 동작이 예전과 같다.
+        playbackRate: (pb && pb.playbackRate > 0 && isFinite(pb.playbackRate)) ? pb.playbackRate : 1,
       };
     }
 
@@ -548,20 +598,70 @@
     };
   }
 
+  // ── 전송량 줄이기 (2026-10-15) ──
+  //  예전엔 시청 중이면 틱마다(MAX 0.15초) 같은 내용을 서비스 워커·앱으로 다시 보냈다 — 탭 하나에 분당 400건.
+  //  재생 위치는 기준점(startedAtMs)으로 앱·Discord 가 스스로 흘려 그리므로, 의미 있는 변화가 있거나
+  //  하트비트(2초)가 됐을 때만 보낸다. 재생·정지·탐색·배속 같은 이벤트와 즉시 갱신(force)은 그대로 바로 나간다.
+  const VIDEO_HEARTBEAT = 2000;
+  let lastVideo = null;            // 마지막으로 보낸 시청 상태 요약 { key, ct, at, anchor }
+  function videoKey(s) {
+    return [s.url, s.seriesName, s.episodeTitle, s.episodeNumber, s.isPlaying, s.loaded, s.duration,
+            s.thumbnail, s.isLive, s.liveStartedAt, s.playbackRate, s.binge].join('|');
+  }
+  function videoWorthSending(s, now) {
+    const p = lastVideo;
+    if (!p || p.key !== videoKey(s)) return true;
+    if (now - p.at >= VIDEO_HEARTBEAT) return true;
+    //  기준점이 막 생겼거나 없어졌다 — 카드 시간을 정확히 맞출 수 있게 바로 보낸다
+    if (!s.startedAtMs !== !p.anchor) return true;
+    //  기준점이 1.5초 넘게 옮겨졌다 = 탐색·끊김 (이벤트가 없거나 놓친 경우도 잡는다)
+    if (s.startedAtMs && p.anchor) return Math.abs(s.startedAtMs - p.anchor) > 1500;
+    //  기준점이 없는 사이트는 '흘렀어야 할 위치' 와 비교한다
+    const expect = p.ct + (s.isPlaying ? (now - p.at) / 1000 * (s.playbackRate || 1) : 0);
+    return Math.abs(s.currentTime - expect) > 2;
+  }
+  //  둘러보기 페이지는 내용이 바뀌어도 급할 게 없다 — 1초에 한 번만 훑는다 (주소 이동·이벤트는 즉시)
+  const BROWSING_SCAN_MS = 1000;
+  let lastBrowseScanAt = 0;
+
+  //  진단 (2026-10-17): 이 탭이 서비스 워커에 닿았는지·앱이 붙어 있는지를 저장소 'diagContent' 에 남긴다.
+  //  Chrome 을 다시 켠 뒤 안 붙는 원인을 가리는 용도 — 결과가 바뀔 때만 쓴다 (매 전송마다 쓰지 않는다).
+  let diagLast = '';
+  function noteDiag(s) {
+    if (s === diagLast) return;
+    diagLast = s;
+    try { chrome.storage.local.set({ diagContent: { at: new Date().toISOString(), site: SITE.id, s } }); } catch (e) { /* 무시 */ }
+  }
+
   // ── 전송 ──
   function sendUpdate(force) {
+    if (isOrphaned()) return;   // 끊긴 확장 소속이면 훑지도 보내지도 않는다 (영상 이벤트로 불려도)
+    const playbackUrl = SITE.isPlaybackUrl();   // 한 번만 묻는다 (치지직은 묻는 데도 DOM 을 본다)
+    if (hiddenCleared && document.hidden && !playbackUrl) {
+      //  가려진 채 영상 주소를 거쳐 왔다면 그때 보낸 시청 카드가 남아 있다 — 한 번 지운다
+      if (lastStateStr) sendClear('탭이 계속 가려져 있음');
+      return;
+    }
+    const now = Date.now();
+    if (!force && !playbackUrl) {
+      if (now - lastBrowseScanAt < BROWSING_SCAN_MS) return;
+      lastBrowseScanAt = now;
+    }
     //  추출기가 "아직 이 영상 정보를 못 믿는다" 고 하면 보내지 않는다.
     //  (SPA 이동 직후 DOM 에 이전 영상 값이 남아, 이전 제목·채널이 카드로 나갔다)
-    if (typeof SITE.isReady === 'function' && SITE.isPlaybackUrl() && !SITE.isReady()) return;
+    if (typeof SITE.isReady === 'function' && playbackUrl && !SITE.isReady()) return;
     const state = collectState();
     const stateStr = JSON.stringify(state);
-    const now = Date.now();
 
     if (!force && state.type === 'BROWSING' &&
         stateStr === lastStateStr && state.url === lastUrl &&
         now - lastSentAt < BROWSING_HEARTBEAT) {
       return;
     }
+    if (!force && state.type === 'VIDEO' && !videoWorthSending(state, now)) return;
+    lastVideo = state.type === 'VIDEO'
+      ? { key: videoKey(state), ct: state.currentTime, at: now, anchor: state.startedAtMs || 0 }
+      : null;
 
     const logKey = state.type === 'VIDEO'
       ? ['V', state.seriesName, state.episodeNumber, state.episodeTitle, state.isPlaying, state.loaded].join('|')
@@ -574,6 +674,7 @@
 
     chrome.runtime.sendMessage({ action: 'UPDATE_STATE', data: state })
       .then((res) => {
+        noteDiag('워커 응답 · 앱 ' + (res && res.connected ? 'O' : 'X'));
         if (changed) {
           LOG(`전송 → ${state.type}`,
             state.type === 'VIDEO'
@@ -582,7 +683,7 @@
             res ? `[앱 연결: ${res.connected ? 'O' : 'X'}]` : '');
         }
       })
-      .catch((e) => LOG('전송 실패 (서비스 워커 응답 없음):', e.message));
+      .catch((e) => { noteDiag('워커 없음 · ' + (e && e.message)); LOG('전송 실패 (서비스 워커 응답 없음):', e.message); });
   }
 
   // 추출기가 "지금 바로 보내라"고 부를 수 있는 통로.
@@ -597,36 +698,68 @@
     sendUpdate(true);
   };
 
-  // ── 부스터 ──
-  //  앱에서 켜면 더 자주 살펴 반응이 빨라진다. 대신 CPU 를 더 쓴다.
+  // ── 반응 속도 ──
+  //  앱에서 고른 단계에 따라 얼마나 자주 살필지 정한다. 자주 볼수록 빠르고 CPU 를 더 쓴다.
+  //   tick : 이 파일이 페이지를 훑어 앱으로 보내는 주기
+  //   poll : 플레이어 브리지(MAIN 월드)가 재생기를 읽는 주기
+  //  ⚠ 재생/일시정지/탐색은 <video> 이벤트로 즉시 잡히므로 단계와 무관하게 빠르다.
+  //    이 주기는 이벤트가 없는 변화(제목 교체·SPA 이동·라이브 확정)를 잡는 몫이다.
+  //    그래서 MAX 의 이득은 "그런 변화"에서 나온다.
+  const LEVELS = {
+    max:    { tick: 150,  poll: 100 },
+    high:   { tick: 300,  poll: 150 },
+    normal: { tick: 1000, poll: 400 },
+    low:    { tick: 2500, poll: 1000 },
+  };
+  //  MAIN 월드 브리지가 물어볼 수 있게 열어 둔다 (거긴 chrome.storage 를 못 본다)
+  self.TOKU_LEVELS = LEVELS;
+  self.TOKU_LEVEL = 'normal';
+
   //  주기를 바꾸려면 타이머를 다시 걸어야 하므로 값을 바꿀 때마다 재설치한다.
-  const TICK_NORMAL = 1000;
-  const TICK_BOOST = 300;
-  let tickMs = TICK_NORMAL;
+  let tickMs = LEVELS.normal.tick;
   let tickTimer = null;
   function installTick() {
     if (tickTimer) clearInterval(tickTimer);
     tickTimer = setInterval(onTick, tickMs);
   }
-  function applyBooster(on) {
-    const want = on ? TICK_BOOST : TICK_NORMAL;
+  function applyLevel(level) {
+    const lv = LEVELS[level] ? level : 'normal';
+    self.TOKU_LEVEL = lv;
+    const want = LEVELS[lv].tick;
     if (want === tickMs) return;
     tickMs = want;
     installTick();
-    LOG('부스터', on ? '켜짐 (' + want + 'ms)' : '꺼짐 (' + want + 'ms)');
+    LOG('반응 속도', lv.toUpperCase() + ' (' + want + 'ms)');
+  }
+  //  예전 앱이 붙어 boostLevel 이 없을 때를 위해 booster 도 본다
+  function levelFrom(r) {
+    if (!r) return 'normal';
+    if (LEVELS[r.boostLevel]) return r.boostLevel;
+    return r.booster ? 'high' : 'normal';
   }
   try {
-    chrome.storage.local.get('booster', (r) => applyBooster(!!(r && r.booster)));
+    chrome.storage.local.get(['boostLevel', 'booster'], (r) => applyLevel(levelFrom(r)));
     chrome.storage.onChanged.addListener((ch, area) => {
-      if (area === 'local' && ch.booster) applyBooster(!!ch.booster.newValue);
+      if (area !== 'local') return;
+      if (ch.boostLevel) applyLevel(ch.boostLevel.newValue);
+      else if (ch.booster) applyLevel(ch.booster.newValue ? 'high' : 'normal');
     });
   } catch (e) { /* 저장소가 없어도 기본 주기로 동작한다 */ }
 
   function onTick() {
+    if (isOrphaned()) return;
+    //  페이지 안 이동(SPA) 감지. 아래 history 훅은 확장 쪽 세계에만 걸려 페이지의 pushState 를 못 본다
+    //  (뒤로/앞으로만 잡혔다). 그래서 틱마다 주소를 직접 비교한다.
+    //  바뀌었으면 onUrlChange 가 바로 보낸다 — 같은 순간에 한 번 더 보내지 않는다 (안전망은 다음 틱에)
+    if (location.href !== seenHref) { onUrlChange(); return; }
+    //  가려진 채 '시청' 에서 '둘러보기' 로 바뀌면(방송 종료 등 — 주소는 그대로) 숨는 순간 거는 15초 타이머가
+    //  없었다. 같은 규칙(계속 가려져 있으면 15초 뒤 지움)을 여기서도 건다.
+    if (document.hidden && !hideTimer && !hiddenCleared && !SITE.isPlaybackUrl()) armHideClear();
     sendUpdate(false);
     // 안전망: 일부 플레이어는 끝에서 'ended'를 안 쏘고 멈추기만 한다.
     //  끝 1초 이내 + 정지 상태일 때만 완주로 간주 (중간 일시정지는 절대 해당 없음)
-    if (!bingeMode || bingeMoving) return;
+    //  정주행은 TTFC·IMAGINATION 만 — 유튜브가 끝에서 멈춰 있으면 틱마다 로그만 쌓였다.
+    if (!bingeMode || bingeMoving || (SITE.id !== 'ttfc' && SITE.id !== 'imagination')) return;
     const v = SITE.getVideoElement();
     if (!v || !v.duration || !isFinite(v.duration)) return;
     if ((v.ended || v.paused) && v.duration - v.currentTime <= 1 && v.currentTime > 0) {
@@ -635,6 +768,13 @@
     }
   }
   installTick();
+  orphanStops.push(() => { if (tickTimer) clearInterval(tickTimer); tickTimer = null; });
+  //  페이지(MAIN 월드) 브리지는 확장과 무관하게 계속 돈다 — 가장 느리게(1분) 내려 둔다.
+  //  탭을 새로고침하면 브리지도 새로 붙으므로 되돌릴 필요가 없다.
+  const BRIDGE = { youtube: 'TOKU_RPC_YT', disneyplus: 'TOKU_RPC_DP' }[SITE.id];
+  if (BRIDGE) {
+    orphanStops.push(() => window.postMessage({ channel: BRIDGE + '_BOOST', ms: 60000 }, location.origin));
+  }
 
   // ── 비디오 이벤트 ──
   //  ※ timeupdate는 등록하지 않음 — 초당 ~4회 발생해 매번 풀 DOM 스캔+전송을
@@ -642,7 +782,8 @@
   function attachVideoEvents() {
     const video = SITE.getVideoElement();
     if (!video || video._tokuRpcAttached) return;
-    ['play', 'pause', 'seeked', 'loadedmetadata', 'ended', 'playing'].forEach(evt => {
+    //  ratechange: 배속을 바꾸면 진행 바 기준점을 바로 다시 잡게 한다 (다음 틱까지 기다리지 않는다)
+    ['play', 'pause', 'seeked', 'loadedmetadata', 'ended', 'playing', 'ratechange'].forEach(evt => {
       video.addEventListener(evt, () => {
         LOG(`video 이벤트: ${evt}`);
         sendUpdate(true);
@@ -655,14 +796,22 @@
   }
 
   attachVideoEvents();
-  new MutationObserver(() => attachVideoEvents())
-    .observe(document.body, { childList: true, subtree: true });
+  //  DOM 이 바뀔 때마다 영상을 찾지 않는다 — 채팅·댓글이 흐르는 페이지는 초당 수십 번 바뀐다.
+  //  0.3초에 한 번으로 묶는다 (영상이 갈려도 그 사이 상태는 틱이 잡는다).
+  let attachTimer = null;
+  const attachMo = new MutationObserver(() => {
+    if (attachTimer || isOrphaned()) return;
+    attachTimer = setTimeout(() => { attachTimer = null; attachVideoEvents(); }, 300);
+  });
+  attachMo.observe(document.body, { childList: true, subtree: true });
+  orphanStops.push(() => { attachMo.disconnect(); if (attachTimer) clearTimeout(attachTimer); attachTimer = null; });
 
   // ── SPA URL 변경 즉시 감지 (history API 훅 — 폴링 제거로 반응속도 ↑, CPU ↓) ──
   //  라우팅 직후엔 DOM이 아직 이전 페이지일 수 있어 50ms/600ms 두 번 전송:
   //  첫 번째로 즉시 반영, 두 번째로 렌더 완료본 보정. (2초 주기 전송이 최종 안전망)
   function onUrlChange() {
-    if (location.href === lastUrl) return;
+    if (location.href === seenHref) return;
+    seenHref = location.href;
     LOG('URL 변경 감지:', location.pathname);
     navStartedAt = Date.now();
     // 새 에피소드로 넘어왔으니 진행 상태 초기화 (SPA는 문서가 유지돼 수동 리셋 필요)
@@ -709,7 +858,11 @@
       //   → 횟수는 남기고 '간격 제한'만 풀어 준다. 앱 재시작 때는 RESET_THUMBS 가
       //     따로 와서 thumbFails.clear() 로 제대로 복구된다(위 분기).
       const rec = thumbFails.get(msg.url);
-      if (rec && rec.n >= MAX_TRIES) return;      // 죽은 URL 은 재요청에도 응하지 않는다
+      //  포기한 URL 이라도 GIVEUP_MS 가 지났으면 다시 받아 준다 (영구 포기 금지)
+      if (rec && rec.n >= MAX_TRIES) {
+        if (Date.now() - rec.at < GIVEUP_MS) return;
+        thumbFails.delete(msg.url);
+      }
       sentThumbs.delete(msg.url);
       if (rec) thumbFails.set(msg.url, { n: rec.n, at: 0 });
       ensureThumbBytes(msg.url);
@@ -730,6 +883,7 @@
     LOG(why + ' → CLEAR');
     try { chrome.runtime.sendMessage({ action: 'CLEAR', site: SITE.id }).catch(() => {}); } catch (e) {}
     lastStateStr = '';
+    lastVideo = null;             // 지운 뒤엔 같은 영상이라도 바로 다시 보내야 한다
   }
 
   // ── 탭이 가려졌을 때 ──
@@ -742,17 +896,22 @@
   //    둘러보는 중일 때만, 그것도 잠깐 가린 게 아니라 계속 가려져 있을 때만 지운다.
   const HIDE_CLEAR_DELAY = 15000;
   let hideTimer = null;
+  function armHideClear() {
+    if (hideTimer) return;
+    hideTimer = setTimeout(() => {
+      hideTimer = null;
+      if (!document.hidden || SITE.isPlaybackUrl()) return;
+      sendClear('탭이 계속 가려져 있음');
+      hiddenCleared = true;
+    }, HIDE_CLEAR_DELAY);
+  }
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       if (SITE.isPlaybackUrl()) return;          // 시청 중 — 잠깐 다른 창을 본 것뿐이다
-      if (hideTimer) return;
-      hideTimer = setTimeout(() => {
-        hideTimer = null;
-        if (!document.hidden || SITE.isPlaybackUrl()) return;
-        sendClear('탭이 계속 가려져 있음');
-      }, HIDE_CLEAR_DELAY);
+      armHideClear();
     } else {
       if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }   // 돌아왔으니 취소
+      hiddenCleared = false;
       sendUpdate(true);
     }
   });

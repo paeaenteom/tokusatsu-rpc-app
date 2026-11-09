@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "TOKU RPC",
-  "version": "0.3.1",
+  "version": "0.3.3",
   "_key_설명": "확장 ID를 고정하는 공개키. 이게 있어야 자동 설치(정책)와 수동 로드가 같은 ID(dciaobllfdcegjcdmimclgglapnhggjm)를 쓴다. 서명용 개인키(.pem)는 저장소에 없으며 로컬에만 보관한다.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtdXU7Irp6ZE9BnzNdaeCLf+REWfTOkja4lWbnY8Gla2ob3uaHQWV+HPH+Su6pI7qqd3egQOQRbT3krl6TS+ijCeyCAwpVLE7dHWh9OhREQnPgaO9lVc9S4QgW46B3320KL/S3mV29R5vCRhtTi2HAqbg4QWSQbTh8j4gmW2kh8btvswv54I51TjBhiyy5UhCahquGSK3HI7c9MwG6c7bblz2x8SAPXA05M9I4PREc00UUVhlK1uzc0HmDbW0/afrHwgUgTTGVJmUedDi/sk56AnWQXqvU47evm1lg/GEF9wKhMEK51BC0d84oVnCta3hld5GLF8AGF/MLS/QrKkQ6QIDAQAB",
-  "description": "特撮配信サイト（東映特撮ファンクラブ・TSUBURAYA IMAGINATION）と Disney+・YouTube の視聴情報を Discord に表示します",
+  "description": "特撮配信サイト（東映特撮ファンクラブ・TSUBURAYA IMAGINATION）と Disney+・YouTube・CHZZK・dアニメストア の視聴情報を Discord に表示します",
   "permissions": [
     "alarms",
     "storage"
@@ -20,8 +20,19 @@
     "https://*.disney-plus.net/*",
     "https://www.youtube.com/*",
     "https://i.ytimg.com/*",
-    "https://yt3.googleusercontent.com/*"
+    "https://yt3.googleusercontent.com/*",
+    "https://livecloud-thumb.akamaized.net/*",
+    "https://nng-phinf.pstatic.net/*",
+    "https://video-phinf.pstatic.net/*",
+    "https://chzzk.naver.com/*",
+    "https://animestore.docomo.ne.jp/*",
+    "https://cs1.animestore.docomo.ne.jp/*",
+    "ws://127.0.0.1:7690/*",
+    "http://127.0.0.1:7690/*"
   ],
+  "_local_app_설명": "TOKU RPC 앱(127.0.0.1:7690, 이 PC 의 웹소켓 서버) 주소 권한 — 대비용. Chrome 의 '로컬 네트워크 접근' 제한이 웹소켓에도 적용되고 있고, 호스트 권한이 있는 확장은 그 제한에서 빠진다고 안내돼 있다. (2026-10-14 Chrome 155 업데이트 뒤 연결이 끊긴 일은 권한 없이도 다시 불러오기로 붙어서 이 제한 탓은 아니었다 — 그쪽은 팝업의 '확장 다시 불러오기' 로 고친다.) 웹소켓(ws)과 같은 주소의 http 형식 둘 다 둔다 — 크롬이 어느 형식으로 대조하는지 문서에 없다. 앱 포트 하나만 연다.",
+  "_danime_설명": "dアニメストア: 사이트 주소는 새 버전 적용 때 열린 탭을 찾는 데, cs1 은 썸네일 CDN(로그인 없이 200, CORS 없음 — 워커만 받을 수 있다, 2026-11-04 확인). 재생 창(sc_d_pc)에만 MAIN 월드 브리지를 document_start 로 넣는다 — 플레이어가 받은 재생 정보 응답에서 작품명·화·장면 이미지만 읽는다(요청을 새로 보내지 않는다).",
+  "_chzzk_설명": "치지직 썸네일 CDN 3곳만 연다(2026-10-11 확인: 라이브 스냅샷·다시보기·클립). 라이브 스냅샷 CDN 은 CORS 헤더가 없어 워커만 받을 수 있다. 클립 플레이어(m.naver.com) 에는 스크립트를 넣지 않는다 — 치지직 탭이 그 iframe 이 보낸 메시지만 확인해 쓴다. 채팅 팝업·방송용 오버레이 주소는 시청이 아니라서 뺀다. 치지직 페이지 주소 권한(chzzk.naver.com)은 '새 버전 적용' 때 열린 치지직 탭을 찾는 데 쓴다 — 탭 주소로 찾으려면 그 사이트의 호스트 권한이 있어야 하고, 다른 4개 사이트는 이미 있다.",
   "content_scripts": [
     {
       "matches": [
@@ -33,7 +44,8 @@
         "locales/ja.js",
         "i18n.js",
         "extractors/ttfc-extract.js",
-        "content.js"
+        "content.js",
+        "keybind.js"
       ],
       "run_at": "document_idle"
     },
@@ -47,7 +59,8 @@
         "locales/ja.js",
         "i18n.js",
         "extractors/imagination-extract.js",
-        "content.js"
+        "content.js",
+        "keybind.js"
       ],
       "run_at": "document_idle"
     },
@@ -71,7 +84,8 @@
         "locales/ja.js",
         "i18n.js",
         "extractors/disneyplus-extract.js",
-        "content.js"
+        "content.js",
+        "keybind.js"
       ],
       "run_at": "document_idle"
     },
@@ -95,7 +109,60 @@
         "locales/ja.js",
         "i18n.js",
         "extractors/youtube-extract.js",
-        "content.js"
+        "content.js",
+        "keybind.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://chzzk.naver.com/*"
+      ],
+      "exclude_matches": [
+        "https://chzzk.naver.com/live/*/chat*",
+        "https://chzzk.naver.com/iframe/*",
+        "https://chzzk.naver.com/embed/*",
+        "https://chzzk.naver.com/chat*",
+        "https://chzzk.naver.com/donation*",
+        "https://chzzk.naver.com/video-donation*",
+        "https://chzzk.naver.com/mission-donation*",
+        "https://chzzk.naver.com/party-donation*",
+        "https://chzzk.naver.com/gift-effect*",
+        "https://chzzk.naver.com/product-purchase*"
+      ],
+      "js": [
+        "locales/ko.js",
+        "locales/en.js",
+        "locales/ja.js",
+        "i18n.js",
+        "extractors/chzzk-extract.js",
+        "content.js",
+        "keybind.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://animestore.docomo.ne.jp/animestore/sc_d_pc*"
+      ],
+      "js": [
+        "extractors/danime-main.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://animestore.docomo.ne.jp/*"
+      ],
+      "js": [
+        "locales/ko.js",
+        "locales/en.js",
+        "locales/ja.js",
+        "i18n.js",
+        "extractors/danime-extract.js",
+        "content.js",
+        "keybind.js"
       ],
       "run_at": "document_idle"
     }
@@ -116,5 +183,5 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "version_name": "0.3.1 beta"
+  "version_name": "0.3.3 beta"
 }

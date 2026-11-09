@@ -76,8 +76,12 @@
   function tick() {
     const snap = snapshot();
     if (!snap) return;
+    //  값이 같으면 다시 쓰지 않는다 — 시간은 초 단위라 MAX(0.15초) 폴링의 대부분이 같은 값이고,
+    //  쓸 때마다 페이지의 속성 관찰자들이 깨어난다. 지금 붙어 있는 값과 비교하므로 누가 지워도 다시 쓴다.
     try {
-      document.documentElement.setAttribute(ATTR, JSON.stringify(snap));
+      const json = JSON.stringify(snap);
+      const root = document.documentElement;
+      if (root.getAttribute(ATTR) !== json) root.setAttribute(ATTR, json);
     } catch (e) { /* 무시 */ }
     // postMessage 는 '무엇이 달라졌다' 는 신호용이다 (즉시 갱신을 깨우는 용도).
     const cmp = [snap.videoId, snap.title, snap.author, snap.isLive,
@@ -113,14 +117,23 @@
   }
 
   let pollTimer = setInterval(tick, POLL_MS);
+  let curPoll = POLL_MS;
   function setPoll(ms) {
+    if (ms === curPoll) return;   // 같은 값에 다시 걸면 그때마다 주기가 처음부터 시작된다
+    curPoll = ms;
     clearInterval(pollTimer);
     pollTimer = setInterval(tick, ms);
   }
 
   window.addEventListener('message', (e) => {
     if (e.source !== window || !e.data) return;
-    if (e.data.channel === CHANNEL + '_BOOST') { setPoll(e.data.on ? POLL_BOOST : POLL_MS); return; }
+    if (e.data.channel === CHANNEL + '_BOOST') {
+      //  격리 월드가 단계에 맞는 주기(ms)를 직접 준다. 단계를 모르는 예전 코드가
+      //  on 만 보내면 예전처럼 두 단계로 동작한다.
+      const ms = Number(e.data.ms);
+      setPoll(ms > 0 ? ms : (e.data.on ? POLL_BOOST : POLL_MS));
+      return;
+    }
     if (e.data.channel !== CHANNEL + '_REQ') return;
     lastJson = '';          // 다음 tick 에서 무조건 다시 보낸다
     tick();

@@ -12,18 +12,73 @@ function paint() {
 }
 
 // ── 앱 연결 상태 ──
+//  connected: null(확인 중) · true · false.  stuck: 확장 안쪽(서비스 워커)이 아예 답을 안 한다.
+//  ⚠ Chrome 이 업데이트된 뒤 확장 서비스 워커가 멈춰, 앱이 켜져 있어도 다시 불러오기 전까지
+//    연결이 안 된 적이 있다 (2026-10-14 실측: Chrome 155 로 바뀐 뒤 3시간 넘게 연결 0회, 다시 불러오자 즉시 연결).
+//    팝업은 서비스 워커와 따로 돌아서 그 상태에서도 열린다 → 여기서 고칠 수 있게 '다시 불러오기' 를 둔다.
 let connected = null;
+let stuck = false;
 function $status() {
-  if (connected === null) return;   // 아직 응답 전 — data-i18n 기본값 유지
+  const fix = document.getElementById('fixBox');
   const el = document.getElementById('status');
+  if (stuck) {
+    el.className = 'status err';
+    el.innerHTML = '<div class="dot red"></div><span></span>';
+    el.querySelector('span').textContent = T('popup.swStuck');
+    fix.hidden = false;
+    return;
+  }
+  if (connected === null) return;   // 아직 응답 전 — data-i18n 기본값 유지
   el.className = connected ? 'status ok' : 'status err';
   el.innerHTML = `<div class="dot ${connected ? 'green' : 'red'}"></div><span></span>`;
   el.querySelector('span').textContent = T(connected ? 'popup.connected' : 'popup.notRunning');
+  fix.hidden = connected;            // 앱이 켜져 있는데도 안 붙으면 다시 불러오기로 고칠 수 있다
 }
 
-chrome.runtime.sendMessage({ action: 'GET_STATUS' }, (res) => {
-  connected = !!(res && res.connected);
+//  서비스 워커에 상태를 묻는다. 2초 안에 답이 없으면 멈춘 것으로 본다 (cb(null)).
+function askStatus(reconnect, cb) {
+  let done = false;
+  const finish = (r) => { if (done) return; done = true; clearTimeout(timer); cb(r); };
+  const timer = setTimeout(() => finish(null), 2000);
+  try {
+    chrome.runtime.sendMessage({ action: 'GET_STATUS', reconnect }, (res) => {
+      finish(chrome.runtime.lastError ? null : (res || null));
+    });
+  } catch (e) { finish(null); }
+}
+
+// ── 새 버전 ──
+//  팝업은 열 때마다 디스크에서 새로 읽힌다(다시 불러오기 불필요 — Chrome 문서). 그래서 확장 파일을 바꾼 뒤
+//  아무도 다시 불러오지 않았어도 이 코드는 늘 최신이다. 서비스 워커가 '불러온 순간의 지문' 을 주면
+//  지금 디스크 지문(version-print.js)과 비교하고, 그 값을 아예 안 주면(지문을 모르는 예전 워커) 새 버전으로 본다.
+function checkUpdate(res) {
+  if (!res) return;                 // 워커가 멈춤 — 다시 불러오기 칸이 따로 뜬다
+  const show = () => { document.getElementById('updateBox').hidden = false; };
+  if (!('loadedPrint' in res)) { show(); return; }
+  if (!res.loadedPrint || typeof self.TOKU_PRINT !== 'function') return;   // 모르면 띄우지 않는다
+  self.TOKU_PRINT().then((p) => { if (p && p !== res.loadedPrint) show(); });
+}
+
+askStatus(true, (res) => {
+  checkUpdate(res);
+  if (!res) { stuck = true; $status(); return; }
+  connected = !!res.connected;
   $status();
+  //  방금 다시 붙여 봤으니 잠시 뒤 한 번 더 확인한다
+  if (!connected) setTimeout(() => askStatus(false, (r) => { if (r) { connected = !!r.connected; $status(); } }), 1500);
+});
+
+//  확장 다시 불러오기 — chrome://extensions 의 새로고침과 같다. 팝업은 닫힌다.
+document.getElementById('reloadExt').addEventListener('click', () => {
+  try { chrome.runtime.reload(); } catch (e) { /* 무시 */ }
+});
+
+//  새 버전 적용 — 다시 불러오면 이 팝업은 닫힌다. 새 워커가 이 표시를 보고 열린 사이트 탭을 새로고침한다
+//  (안 하면 그 탭들의 옛 스크립트가 끊긴 채 남아 새로고침 전까지 카드가 안 뜬다).
+document.getElementById('applyUpdate').addEventListener('click', () => {
+  chrome.storage.local.set({ refreshTabsAfterUpdate: Date.now() }, () => {
+    try { chrome.runtime.reload(); } catch (e) { /* 무시 */ }
+  });
 });
 
 // ── 정주행 모드 토글 ──
