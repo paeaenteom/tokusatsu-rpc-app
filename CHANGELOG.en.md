@@ -2,6 +2,18 @@
 
 # Changelog
 
+## Beta 0.1.1 · test version (alpha) 0.2.1 (2026-11-14)
+
+Webhook tab
+- **Webhook folder search** — find a series by its Korean reading (e.g. `히비키`, `포제`), kana or kanji. Words separated by spaces must all match (Ctrl+F)
+- **Characters: all on · all off · random** — per folder; random flips a coin for each character
+- Series icons and character avatars not showing — only on-screen images are fetched, 4 downloads at once, and fetched images are kept on disk for 30 days so they show instantly next time
+- The search box covered the clear button
+
+Speed
+- Webhook tab stutter — secrets.json was read hundreds of times per paint; now only when it changes, and off-screen folders are not drawn. Paint 40–80 ms → 6–13 ms (122 folders)
+- Faster rounded cards and wrapped text (pixel-identical output) — app settings tab paint 16 ms → 8 ms
+
 ## C version — beta 0.1.0 · test version (alpha) 0.2.0 (2026-11)
 
 The Electron app was rewritten with **C11 and the Win32 API only**. No external libraries or runtime — a single exe of about 1.1 MB.

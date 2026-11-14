@@ -13,7 +13,7 @@ Supported sites
 - dアニメストア — `animestore.docomo.ne.jp`
 
 > **C version** — rewritten with C11 and the Win32 API only (no external libraries or runtime, one exe of about 1.1 MB).
-> Beta 0.1.0 · test version (alpha) 0.2.0. A personal tool, so there may be bugs.
+> Beta 0.1.1 · test version (alpha) 0.2.1. A personal tool, so there may be bugs.
 > The old Electron version (up to 0.3.1) is kept at the [`v0.3.1-beta` tag](https://github.com/paeaenteom/tokusatsu-rpc-app/tree/v0.3.1-beta).
 
 ---

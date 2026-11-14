@@ -5,8 +5,8 @@
 #ifndef TOKU_CHANNEL_H
 #define TOKU_CHANNEL_H
 
-#define CH_VERSION_BETA "0.1.0"
-#define CH_VERSION_ALPHA "0.2.0"
+#define CH_VERSION_BETA "0.1.1"
+#define CH_VERSION_ALPHA "0.2.1"
 #define CH_PROG_DIR L"TOKU RPC Beta"
 #define CH_EXE L"TOKU-RPC-beta.exe"
 #define CH_MUTEX L"Local\\TOKU-RPC-native-beta"

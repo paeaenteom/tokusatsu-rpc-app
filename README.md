@@ -13,7 +13,7 @@
 - dアニメストア — `animestore.docomo.ne.jp`
 
 > **C 버전** — C11 + Win32 API 만으로 다시 만든 앱입니다 (외부 라이브러리·런타임 없음, exe 하나 약 1.1MB).
-> 베타 0.1.0 · 테스트 버전(알파) 0.2.0. 개인용으로 만든 도구라 버그가 있을 수 있어요.
+> 베타 0.1.1 · 테스트 버전(알파) 0.2.1. 개인용으로 만든 도구라 버그가 있을 수 있어요.
 > 예전 Electron 버전(0.3.1 까지)은 [`v0.3.1-beta` 태그](https://github.com/paeaenteom/tokusatsu-rpc-app/tree/v0.3.1-beta)에 남아 있습니다.
 
 ---

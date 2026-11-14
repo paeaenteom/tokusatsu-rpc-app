@@ -10,6 +10,9 @@ const PREFIX = 'toku-chswitch-' + process.pid + '-';
 const DIR = path.join(process.env.APPDATA, 'toku-rpc-native-test');
 const CFG = path.join(DIR, 'config.json');
 const LOG = path.join(DIR, 'logs', 'main.log');
+//  버전은 channel.h 에서 읽는다 (버전을 올려도 시험을 안 고치게)
+const CHH = fs.readFileSync(path.join(__dirname, '..', 'src', 'app', 'channel.h'), 'utf8');
+const VB = CHH.match(/CH_VERSION_BETA "([^"]+)"/)[1], VA = CHH.match(/CH_VERSION_ALPHA "([^"]+)"/)[1];
 let fail = 0, n = 0;
 const ok = (l, c, e) => { n++; console.log('  ' + (c ? 'OK  ' : 'X   ') + l.padEnd(58) + (e !== undefined && !c ? ' ' + JSON.stringify(e).slice(0, 300) : '')); if (!c) fail++; };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -49,14 +52,14 @@ const readCfg = () => { try { return JSON.parse(fs.readFileSync(CFG, 'utf8')); }
   const first = spawn(EXE, [], { env, stdio: 'ignore' });
   try {
     let ws = await connect();
-    ok('처음엔 베타 (설정 없음)', ws && await until(() => /=== TOKU RPC 시작 \(C 베타 0\.1\.0\) ===/.test(logText())));
+    ok('처음엔 베타 (설정 없음)', ws && await until(() => logText().includes('=== TOKU RPC 시작 (C 베타 ' + VB + ') ===')));
     ok('  베타는 V2 줄이 없음', !/전송 V2/.test(logText()));
 
     ws.send(JSON.stringify({ type: 'TEST_SET_CHANNEL', on: true }));
     const exited = await until(() => first.exitCode !== null, 20000);
     ok('스위치 켬 → 설정 저장 · 앞 프로세스 정상 종료', exited && readCfg().testChannel === true && /\[Channel\] 테스트 버전\(알파\) 모드로 바꾸려고 다시 시작합니다/.test(logText()), { exit: first.exitCode, cfg: readCfg().testChannel });
-    const alphaUp = await until(() => /=== TOKU RPC 시작 \(C 알파 0\.2\.0\) ===/.test(logText()), 20000);
-    ok('  스스로 다시 떠서 알파 0.2.0 · "모드를 바꿔 다시 시작"', alphaUp && /\[Channel\] 모드를 바꿔 다시 시작했습니다/.test(logText()));
+    const alphaUp = await until(() => logText().includes('=== TOKU RPC 시작 (C 알파 ' + VA + ') ==='), 20000);
+    ok('  스스로 다시 떠서 알파 ' + VA + ' · "모드를 바꿔 다시 시작"', alphaUp && /\[Channel\] 모드를 바꿔 다시 시작했습니다/.test(logText()));
     ok('  알파는 전송 V2 를 켬', /\[Channel\] 테스트 버전\(알파\) — 전송 V2/.test(logText()));
     try { ws.close(); } catch {}
     ws = await connect();
@@ -64,7 +67,7 @@ const readCfg = () => { try { return JSON.parse(fs.readFileSync(CFG, 'utf8')); }
 
     const before = logText().length;
     ws.send(JSON.stringify({ type: 'TEST_SET_CHANNEL', on: false }));
-    const betaUp = await until(() => /=== TOKU RPC 시작 \(C 베타 0\.1\.0\) ===/.test(logText().slice(before)), 20000);
+    const betaUp = await until(() => logText().slice(before).includes('=== TOKU RPC 시작 (C 베타 ' + VB + ') ==='), 20000);
     ok('스위치 끔 → 다시 시작해서 베타로 돌아옴', betaUp && readCfg().testChannel === false);
     try { ws.close(); } catch {}
     ws = await connect();
