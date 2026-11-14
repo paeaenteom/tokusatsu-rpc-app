@@ -8,6 +8,7 @@
 
 #define IMG_SIZE 192   // 저장 크기 (가로 = 세로). 그릴 때 줄인다
 
+void img_set_cache_dir(const wchar_t *dir);   // https 그림 디스크 캐시 폴더 (img_init 전에, 없으면 캐시 X)
 void img_init(HWND notify, UINT msg);   // 하나 끝날 때마다 PostMessage(notify, msg)
 void img_stop(void);
 //  1 = 있음(*px: IMG_SIZE² BGRA, 미리 곱한 알파), 0 = 받는 중(이번에 요청을 넣었을 수도), -1 = 실패(30초 뒤 다시)

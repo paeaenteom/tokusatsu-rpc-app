@@ -66,6 +66,8 @@
        tests/presence-v2-test.js · channel-switch-test.js. 예전 알파 설치본·부팅 항목은 베타가 시작할 때 정리
      · 보충 직접 입력(11/8): TTFC·IMAGINATION 에 없는 특전 영상 — 작품 고르기(웹훅 폴더)·화·본 시각·출처 표시·이미지(https 링크는 보낼 때 받아 첨부,
        못 받으면 링크 그대로 / 파일 png·jpg·gif·webp 8MB). main.c app_bf_send_manual · tests/backfill-flow-test.js 직접 입력 9건
+     · 설치 프로그램(11/9): src/setup/setup.c + build-setup.bat → build/TOKU-RPC-Setup.exe (앱·확장 내장, 크롬 정책 X, asInvoker). tests/setup-test.js
+       GitHub: paeaenteom/tokusatsu-rpc-app main = C 버전 (Electron 은 v0.3.1-beta 태그), 릴리스 c-v0.1.0-beta 에 Setup·앱 exe
      · 아직 없는 것: 업데이트 확인 (자동 시작·썸네일 캐시·키 설정은 11/7 완료)
    ⚠ Claude 데스크톱(MSIX)에서 띄운 프로그램이 %APPDATA% 에 **새 폴더**를 만들면 Claude 전용 가상 폴더로 간다
      (`%LOCALAPPDATA%\Packages\Claude_…\LocalCache\Roaming`) — 진짜 알파는 explorer 로 띄워야 진짜 폴더를 쓴다

@@ -26,5 +26,6 @@ void cv_blit(canvas *c, const uint32_t *src, int sw, int sh, float dx, float dy,
 // 글자 (UTF-8). fmt = DT_* (DT_SINGLELINE|DT_END_ELLIPSIS 등)
 void cv_text(canvas *c, HFONT f, const char *s, int x, int y, int w, int h, uint32_t rgb, UINT fmt);
 int cv_text_w(canvas *c, HFONT f, const char *s);
+int cv_text_h(canvas *c, HFONT f, const char *s, int w);   // 여러 줄(DT_WORDBREAK) 높이 — 줄 나눔은 기억해 둔다
 
 #endif

@@ -5,6 +5,8 @@
 #include "../src/app/img.h"
 
 int main(int argc, char **argv) {
+    wchar_t cd[MAX_PATH];   //  TOKU_IMG_CACHE = 디스크 캐시 폴더 (시험)
+    if (GetEnvironmentVariableW(L"TOKU_IMG_CACHE", cd, MAX_PATH)) img_set_cache_dir(cd);
     img_init(NULL, 0);
     for (int i = 1; i < argc; i++) {
         const uint32_t *px = NULL;

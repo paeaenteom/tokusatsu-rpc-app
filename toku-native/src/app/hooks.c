@@ -49,9 +49,8 @@ static int write_path(wchar_t *out) {
 }
 
 //  titleHooksRaw — 형식이 맞는 것만 (작품명·주소 둘 다)
-static int raw_hooks(raw_hook **out) {
+static int parse_hooks(const jval *sec, raw_hook **out) {
     *out = NULL;
-    jval *sec = binge_read_secrets();
     const jval *list = json_get(sec, "titleWebhooks");
     int n = 0;
     raw_hook *a = NULL;
@@ -71,11 +70,78 @@ static int raw_hooks(raw_hook **out) {
         a[n].name = (nv && nv->t == J_STR) ? binge_clean_ws(nv->s, nv->slen, NAME_MAX) : dups("");
         n++;
     }
-    json_free(sec);
     *out = a;
     return n;
 }
+//  고치는 쪽(추가·이름·지우기)은 늘 파일에서 새로
+static int raw_hooks(raw_hook **out) {
+    jval *sec = binge_read_secrets();
+    int n = parse_hooks(sec, out);
+    json_free(sec);
+    return n;
+}
 static void raw_free(raw_hook *a, int n) { for (int i = 0; i < n; i++) { free(a[i].title); free(a[i].url); free(a[i].name); } free(a); }
+
+// ── 읽기 캐시 (11/14 렉): 웹훅 탭을 한 번 그릴 때 secrets.json 을 폴더 수×2 번 읽고 풀던 것 → 파일이 바뀔 때만 다시 읽는다
+//  바뀜 확인 = 읽은 파일 경로·수정 시각·크기. 그리는 동안(hk_cache_hold)은 처음 한 번만 확인. 이 파일에 쓰면(save_hooks) 바로 버린다
+static SRWLOCK RCL = SRWLOCK_INIT;
+static raw_hook *RCA;
+static int RCN = -1, RC_DEF, RC_HOLD, RC_HOLD_OK;
+static wchar_t RC_P[MAX_PATH];
+static FILETIME RC_FT;
+static ULONGLONG RC_SZ;
+//  binge_read_secrets 와 같은 순서로 찾은 파일의 도장 (없으면 p = "")
+static void secrets_stamp(wchar_t *p, FILETIME *ft, ULONGLONG *sz) {
+    wchar_t ad[MAX_PATH];
+    p[0] = 0;
+    memset(ft, 0, sizeof *ft);
+    *sz = 0;
+    DWORD tn = GetEnvironmentVariableW(L"TOKU_NATIVE_TEST_SECRETS", p, MAX_PATH);
+    int test = tn && tn < MAX_PATH;
+    if (!test && SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, ad) != S_OK) { p[0] = 0; return; }
+    const wchar_t *subs[2] = { L"toku-rpc-native\\secrets.json", L"toku-rpc\\secrets.json" };
+    for (int i = 0; i < 2; i++) {
+        if (test) { if (i) break; }
+        else { _snwprintf(p, MAX_PATH - 1, L"%ls\\%ls", ad, subs[i]); p[MAX_PATH - 1] = 0; }
+        WIN32_FILE_ATTRIBUTE_DATA a;
+        if (!GetFileAttributesExW(p, GetFileExInfoStandard, &a)) continue;
+        *ft = a.ftLastWriteTime;
+        *sz = ((ULONGLONG)a.nFileSizeHigh << 32) | a.nFileSizeLow;
+        return;
+    }
+    p[0] = 0;
+}
+static void rc_refresh(void) {   //  RCL 잡고 부른다
+    if (RCN >= 0 && RC_HOLD && RC_HOLD_OK) return;
+    wchar_t p[MAX_PATH];
+    FILETIME ft;
+    ULONGLONG sz;
+    secrets_stamp(p, &ft, &sz);
+    if (RC_HOLD) RC_HOLD_OK = 1;
+    if (RCN >= 0 && !wcscmp(p, RC_P) && !memcmp(&ft, &RC_FT, sizeof ft) && sz == RC_SZ) return;
+    if (RCN > 0) raw_free(RCA, RCN);
+    RCA = NULL;
+    jval *sec = binge_read_secrets();
+    RCN = parse_hooks(sec, &RCA);
+    RC_DEF = js_truthy(json_get(sec, "bingeWebhookUrl"));
+    json_free(sec);
+    wcscpy(RC_P, p);
+    RC_FT = ft;
+    RC_SZ = sz;
+}
+static void rc_drop(void) {
+    AcquireSRWLockExclusive(&RCL);
+    if (RCN > 0) raw_free(RCA, RCN);
+    RCA = NULL;
+    RCN = -1;
+    ReleaseSRWLockExclusive(&RCL);
+}
+void hk_cache_hold(int on) {
+    AcquireSRWLockExclusive(&RCL);
+    RC_HOLD = on;
+    RC_HOLD_OK = 0;
+    ReleaseSRWLockExclusive(&RCL);
+}
 
 //  작품명+주소로 만든 id (sha256 앞 12자) — 순서가 바뀌어도 지울 대상을 정확히 가리킨다
 static void hook_id(const raw_hook *h, char out[16]) {
@@ -155,12 +221,15 @@ static const char *save_hooks(raw_hook *a, int n) {
         if (!ok) DeleteFileW(tmp);
     }
     free(s);
+    rc_drop();
     return ok ? NULL : "badfile";
 }
 
 int hk_list(hk_item **out) {
-    raw_hook *a;
-    int n = raw_hooks(&a);
+    AcquireSRWLockExclusive(&RCL);
+    rc_refresh();
+    const raw_hook *a = RCA;
+    int n = RCN > 0 ? RCN : 0;
     hk_item *l = n ? (hk_item *)calloc((size_t)n, sizeof *l) : NULL;
     for (int i = 0; l && i < n; i++) {
         hook_id(&a[i], l[i].id);
@@ -168,7 +237,7 @@ int hk_list(hk_item **out) {
         l[i].name = dups(a[i].name);
         mask(a[i].url, l[i].label);
     }
-    raw_free(a, n);
+    ReleaseSRWLockExclusive(&RCL);
     *out = l;
     return l ? n : 0;
 }
@@ -178,9 +247,10 @@ int hk_has_default(void) {
     char env[64];
     DWORD e = GetEnvironmentVariableA("TOKU_BINGE_WEBHOOK", env, sizeof env);
     if (e) return 1;
-    jval *sec = binge_read_secrets();
-    int r = js_truthy(json_get(sec, "bingeWebhookUrl"));
-    json_free(sec);
+    AcquireSRWLockExclusive(&RCL);
+    rc_refresh();
+    int r = RC_DEF;
+    ReleaseSRWLockExclusive(&RCL);
     return r;
 }
 
@@ -269,10 +339,11 @@ char *hk_url(const char *id) {
     return u;
 }
 int hk_has_title(const char *title) {
-    raw_hook *a;
-    int n = raw_hooks(&a), r = 0;
-    for (int i = 0; i < n && !r; i++) r = !strcmp(a[i].title, title);
-    raw_free(a, n);
+    AcquireSRWLockExclusive(&RCL);
+    rc_refresh();
+    int r = 0;
+    for (int i = 0; i < RCN && !r; i++) r = !strcmp(RCA[i].title, title);
+    ReleaseSRWLockExclusive(&RCL);
     return r;
 }
 char *hk_test_url_for_char(const char *title) {
@@ -525,6 +596,50 @@ const char *hk_char_toggle(const char *title, const char *id, int on) {
         sb_free(&t);
     }
     return e;
+}
+//  캐릭터 한꺼번에 (2026-11-10 유빈 요청) — mode 0 모두 끄기 · 1 모두 켜기 · 2 무작위
+//  무작위는 캐릭터마다 따로 동전 던지기(시스템 난수) — 몇 명이 켜질지 정해져 있지 않고, 다 켜지거나 다 꺼질 수도 있다
+typedef struct { int mode, on, n; } allctx;
+static void all_fn(jval *f, void *p) {
+    allctx *x = (allctx *)p;
+    jval *a = (jval *)json_get(f, "characters");
+    if (!a || a->t != J_ARR) return;
+    for (size_t i = 0; i < a->count; i++) {
+        jval *c = a->items[i];
+        if (!c || c->t != J_OBJ) continue;
+        const jval *id = json_get(c, "id"), *nm = json_get(c, "name");
+        if (!id || id->t != J_STR || !nm || nm->t != J_STR) continue;   //  hookChars 가 보여 주는 캐릭터만
+        int want = x->mode;
+        if (x->mode == 2) {
+            unsigned char b = 0;
+            if (hk_random) hk_random(&b, 1); else BCryptGenRandom(NULL, &b, 1, BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+            want = b & 1;
+        }
+        if (want) obj_del(c, "off"); else json_obj_set(c, "off", json_new_bool(1));
+        x->n++;
+        x->on += want;
+    }
+}
+const char *hk_char_set_all(const char *title, int mode, int *on, int *n) {
+    if (on) *on = 0;
+    if (n) *n = 0;
+    if (mode < 0 || mode > 2) return "missing";
+    hk_char *l;
+    int cnt = hk_chars(title, &l);
+    hk_chars_free(l, cnt);
+    if (!cnt) return "missing";
+    if (has_null(title)) return "badfile";
+    allctx x = { mode, 0, 0 };
+    update_folder(title, all_fn, &x);
+    sbuf t; sb_init(&t, 0);
+    js_slice16(&t, title, strlen(title), 30);
+    char m[300];
+    snprintf(m, sizeof m, "[Binge] 캐릭터 %s: %s · 켜진 캐릭터 %d/%d", mode == 2 ? "무작위" : mode ? "모두 켬" : "모두 끔", t.p ? t.p : "", x.on, x.n);
+    app_log(0, m);
+    sb_free(&t);
+    if (on) *on = x.on;
+    if (n) *n = x.n;
+    return NULL;
 }
 static int avatar_url_ok(const char *s, size_t n) {
     if (n < 9 || n > 2000 || strncmp(s, "https://", 8)) return 0;

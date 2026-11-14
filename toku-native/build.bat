@@ -31,7 +31,7 @@ gcc -c build\nomanifest\empty.c -o build\nomanifest\default-manifest.o || exit /
 windres res\app.rc -O coff -o build\app.res || exit /b 1
 node tools\gen-strings.js || exit /b 1
 rem one exe, two modes: beta (default, same pacing as the JS app) / test version alpha (setting testChannel, pacing V2). src\app\channel.h
-gcc %CFLAGS% -B build\nomanifest\ -mwindows -municode -static -o build\beta\TOKU-RPC-beta.exe src\app\main.c src\app\window.c src\app\img.c src\app\autostart.c src\app\keybinds.c src\app\binge.c src\app\accent.c src\app\hooks.c src\app\imgutil.c src\app\bg.c src\app\backfill.c src\app\canvas.c src\app\traymenu.c src\app\settings.c src\app\upload.c src\net\http.c src\net\ws.c src\discord\ipc.c %CORE% %BASE% build\app.res -lws2_32 -lwinhttp -lbcrypt -lshell32 -lole32 -loleaut32 -ladvapi32 -ltaskschd -lgdi32 -ldwmapi -luxtheme -lwindowscodecs -luuid -limm32 -lnormaliz -lcomdlg32 || exit /b 1
+gcc %CFLAGS% -B build\nomanifest\ -mwindows -municode -static -o build\beta\TOKU-RPC-beta.exe src\app\main.c src\app\window.c src\app\img.c src\app\autostart.c src\app\keybinds.c src\app\binge.c src\app\accent.c src\app\hooks.c src\app\hksearch.c src\app\imgutil.c src\app\bg.c src\app\backfill.c src\app\canvas.c src\app\traymenu.c src\app\settings.c src\app\upload.c src\net\http.c src\net\ws.c src\discord\ipc.c %CORE% %BASE% build\app.res -lws2_32 -lwinhttp -lbcrypt -lshell32 -lole32 -loleaut32 -ladvapi32 -ltaskschd -lgdi32 -ldwmapi -luxtheme -lwindowscodecs -luuid -limm32 -lnormaliz -lcomdlg32 || exit /b 1
 node tests\alpha-smoke.js build\beta\TOKU-RPC-beta.exe || exit /b 1
 node tests\thumb-cache-test.js build\beta\TOKU-RPC-beta.exe || exit /b 1
 rem key settings: store vs real keybinds.js (random commands, poisoned allocator) + extension pick flow
@@ -49,6 +49,11 @@ rem webhook tab data: secrets.js titleWebhooks + main.js folders/characters vs C
 gcc %CFLAGS% -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free -municode -o build\hk_cli.exe tests\hk_cli.c tests\poison_alloc.c src\app\hooks.c src\app\binge.c src\app\accent.c src\app\settings.c src\net\http.c %CORE% %BASE% -lwinhttp -lbcrypt -lole32 -lwindowscodecs -luuid -lnormaliz -lshell32 || exit /b 1
 node tests\hk-diff.js build\hk_cli.exe 1500 1 || exit /b 1
 node tests\hk-diff.js build\hk_cli.exe 1500 2 || exit /b 1
+node tests\hk-charall-test.js build\hk_cli.exe || exit /b 1
+gcc %CFLAGS% -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free -o build\hks_cli.exe tests\hks_cli.c tests\poison_alloc.c src\app\hksearch.c %BASE% -lole32 -lnormaliz -lbcrypt || exit /b 1
+node tests\hks-test.js build\hks_cli.exe || exit /b 1
+gcc %CFLAGS% -o build\cv_cli.exe tests\cv_cli.c src\base\utf.c src\base\sbuf.c -lgdi32 || exit /b 1
+build\cv_cli.exe 20000 || exit /b 1
 rem icon / avatar crop: decode + square crop + PNG encode, checked by decoding the PNG
 gcc %CFLAGS% -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free -municode -o build\iu_cli.exe tests\iu_cli.c tests\poison_alloc.c src\app\imgutil.c -lole32 -lwindowscodecs -luuid || exit /b 1
 node tests\iu-test.js build\iu_cli.exe || exit /b 1
@@ -67,6 +72,7 @@ node tests\autostart-test.js build\autostart_cli.exe || exit /b 1
 rem card images: download + WIC decode (needs network). jpg/webp ok, 404/html/http/bad asset/javascript: refused
 gcc %CFLAGS% -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free -o build\img_cli.exe tests\img_cli.c tests\poison_alloc.c src\app\img.c src\net\http.c %BASE% -lwinhttp -lole32 -lwindowscodecs -luuid -lbcrypt || exit /b 1
 build\img_cli.exe "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg" "https://i.ytimg.com/vi/xxxxxxxxxxx_nope/hqdefault.jpg" "http://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg" "javascript:alert(1)"
+node tests\img-cache-test.js build\img_cli.exe || exit /b 1
 rem window pictures without showing a window: build\snap\tab*.bmp
 node tests\alpha-snap.js build\beta\TOKU-RPC-beta.exe build\snap || exit /b 1
 rem tray menu picture (custom-drawn menu, memory DC only): build\snap-tray\tray@100/150.bmp

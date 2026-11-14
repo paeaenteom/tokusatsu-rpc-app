@@ -81,17 +81,47 @@ static float cover(float px, float py, float x, float y, float w, float h, float
     return e < 0 ? 0 : e > 1 ? 1 : e;
 }
 
+//  이 줄(yy)에서 cover() = 1 이 확실한 칸 [*xa, *xb] — 가장자리에서 1칸 넘게 떨어진 곳만 (11/14 최적화)
+//  그 밖은 예전처럼 한 칸씩 계산하므로 그림은 한 점도 안 바뀐다 (tests/cv_cli.c 가 예전 함수와 비교)
+static int full_span(int yy, float x, float y, float w, float h, float r, int *xa, int *xb) {
+    if (r > w / 2) r = w / 2;
+    if (r > h / 2) r = h / 2;
+    float py = yy + 0.5f;
+    if (py - y < 1.5f || y + h - py < 1.5f) return 0;
+    float l, rr;
+    if (py >= y + r + 1 && py <= y + h - r - 1) { l = x; rr = x + w; }   //  곧은 줄: 양 끝 말고 다
+    else { l = x + r; rr = x + w - r; }                                    //  모서리 줄: 가운데만
+    int a = (int)ceilf(l) + 1, b = (int)floorf(rr) - 2;
+    if (a > b) return 0;
+    *xa = a;
+    *xb = b;
+    return 1;
+}
+
 void cv_round(canvas *c, float x, float y, float w, float h, float r, uint32_t rgb, float alpha) {
     int x0 = (int)floorf(x), y0 = (int)floorf(y), x1 = (int)ceilf(x + w), y1 = (int)ceilf(y + h);
     if (x0 < c->clip.left) x0 = c->clip.left;
     if (y0 < c->clip.top) y0 = c->clip.top;
     if (x1 > c->clip.right) x1 = c->clip.right;
     if (y1 > c->clip.bottom) y1 = c->clip.bottom;
-    for (int yy = y0; yy < y1; yy++)
-        for (int xx = x0; xx < x1; xx++) {
-            float a = cover(xx + 0.5f, yy + 0.5f, x, y, w, h, r);
-            if (a > 0) blend(&c->px[yy * c->w + xx], rgb, a * alpha);
+    for (int yy = y0; yy < y1; yy++) {
+        int xa = 0, xb = -1;
+        if (full_span(yy, x, y, w, h, r, &xa, &xb)) {
+            if (xa < x0) xa = x0;
+            if (xb > x1 - 1) xb = x1 - 1;
         }
+        uint32_t *row = &c->px[yy * c->w];
+        for (int xx = x0; xx < x1; xx++) {
+            if (xx == xa && xa <= xb) {   //  안쪽은 그대로 칠한다 (cover = 1)
+                if (alpha >= 1) for (int k = xa; k <= xb; k++) row[k] = rgb;
+                else for (int k = xa; k <= xb; k++) blend(&row[k], rgb, alpha);
+                xx = xb;
+                continue;
+            }
+            float a = cover(xx + 0.5f, yy + 0.5f, x, y, w, h, r);
+            if (a > 0) blend(&row[xx], rgb, a * alpha);
+        }
+    }
 }
 
 void cv_round_border(canvas *c, float x, float y, float w, float h, float r, float t, uint32_t rgb) {
@@ -101,14 +131,112 @@ void cv_round_border(canvas *c, float x, float y, float w, float h, float r, flo
     if (x1 > c->clip.right) x1 = c->clip.right;
     if (y1 > c->clip.bottom) y1 = c->clip.bottom;
     float ri = r - t < 0 ? 0 : r - t;
-    for (int yy = y0; yy < y1; yy++)
+    for (int yy = y0; yy < y1; yy++) {
+        //  안쪽 사각형이 꽉 찬 칸은 바깥도 꽉 차서 테두리 = 0 → 건너뛴다
+        int xa = 0, xb = -1;
+        if (full_span(yy, x + t, y + t, w - 2 * t, h - 2 * t, ri, &xa, &xb)) {
+            if (xa < x0) xa = x0;
+            if (xb > x1 - 1) xb = x1 - 1;
+        }
         for (int xx = x0; xx < x1; xx++) {
+            if (xx == xa && xa <= xb) { xx = xb; continue; }
             float a = cover(xx + 0.5f, yy + 0.5f, x, y, w, h, r) - cover(xx + 0.5f, yy + 0.5f, x + t, y + t, w - 2 * t, h - 2 * t, ri);
             if (a > 0) blend(&c->px[yy * c->w + xx], rgb, a);
         }
+    }
 }
 
 void cv_circle(canvas *c, float cx, float cy, float r, uint32_t rgb) { cv_round(c, cx - r, cy - r, 2 * r, 2 * r, r, rgb, 1); }
+
+// ── 여러 줄 글 (DT_WORDBREAK) — 줄 나눔을 한 번만 재고 기억한다 (11/14: DrawText 줄바꿈이 한 번에 7~10ms 라 웹훅 탭이 버벅임)
+//  나누는 법: DrawText 처럼 띄어쓰기에서 (\n 은 늘 줄바꿈), 띄어쓰기 없이 넘치면 넘치는 자리에서. 줄마다 DrawText 한 줄로 그린다
+//  키 = 글꼴(핸들 + 글자 높이·평균 폭) · 너비 · 글 내용. 창 스레드 하나에서만 쓴다
+#define WRAP_N 96
+typedef struct { HFONT f; LONG th, tw; int w, nlines; wchar_t *s; int *ls; int lh; DWORD used; int exact, h; } wrapent;   //  exact=0 → 예전처럼 DrawText 로 (h = 그때 높이)
+static wrapent WR[WRAP_N];
+static DWORD WR_TICK;
+static int is_space(wchar_t ch) { return ch == L' ' || ch == L'\t' || ch == 0x3000; }
+static int is_cjk(wchar_t ch) {
+    return (ch >= 0xAC00 && ch <= 0xD7A3) || (ch >= 0x1100 && ch <= 0x11FF) || (ch >= 0x3130 && ch <= 0x318F)   //  한글
+        || (ch >= 0x3040 && ch <= 0x30FF) || (ch >= 0x31F0 && ch <= 0x31FF)                                   //  가나
+        || (ch >= 0x3400 && ch <= 0x4DBF) || (ch >= 0x4E00 && ch <= 0x9FFF) || (ch >= 0xF900 && ch <= 0xFAFF); //  한자
+}
+static const wrapent *wrap_get(canvas *c, const wchar_t *ws, int w) {
+    TEXTMETRICW tm;
+    GetTextMetricsW(c->dc, &tm);
+    HFONT f = (HFONT)GetCurrentObject(c->dc, OBJ_FONT);
+    WR_TICK++;
+    for (int i = 0; i < WRAP_N; i++)
+        if (WR[i].s && WR[i].f == f && WR[i].th == tm.tmHeight && WR[i].tw == tm.tmAveCharWidth && WR[i].w == w && !wcscmp(WR[i].s, ws)) { WR[i].used = WR_TICK; return &WR[i]; }
+    //  비었거나 가장 오래 안 쓴 칸
+    int k = 0;
+    for (int i = 0; i < WRAP_N; i++) { if (!WR[i].s) { k = i; break; } if (WR[i].used < WR[k].used) k = i; }
+    wrapent *e = &WR[k];
+    free(e->s);
+    free(e->ls);
+    memset(e, 0, sizeof *e);
+    size_t n = wcslen(ws);
+    e->s = _wcsdup(ws);
+    e->ls = (int *)malloc(sizeof(int) * 2 * (n + 1));
+    if (!e->s || !e->ls) { free(e->s); free(e->ls); memset(e, 0, sizeof *e); return NULL; }
+    e->f = f; e->th = tm.tmHeight; e->tw = tm.tmAveCharWidth; e->w = w; e->lh = tm.tmHeight; e->used = WR_TICK;
+    //  줄 나눔은 DrawText 에게 직접 묻는다 — 한 줄 높이 칸에 그리게 하면 uiLengthDrawn = 다음 줄이 시작하는 글자 (처음 한 번만)
+    //  그리는 곳은 1×1 메모리 DC (화면·캔버스에 안 그림). 같은 글꼴
+    static HDC mdc;
+    static HBITMAP mbm;
+    if (!mdc) { mdc = CreateCompatibleDC(c->dc); mbm = CreateCompatibleBitmap(c->dc, 1, 1); SelectObject(mdc, mbm); SetBkMode(mdc, TRANSPARENT); }
+    HFONT mo = (HFONT)SelectObject(mdc, f);
+    int nl = 0;
+    size_t a = 0;
+    while (a < n || (a == n && nl == 0)) {
+        DRAWTEXTPARAMS dp;
+        memset(&dp, 0, sizeof dp);
+        dp.cbSize = sizeof dp;
+        RECT lr = { 0, 0, w > 0 ? w : 1, tm.tmHeight };
+        wchar_t *seg = e->s + a;   //  DrawTextEx 가 글을 고칠 수 있어 사본(e->s)으로
+        if (!DrawTextExW(mdc, seg, (int)(n - a), &lr, DT_LEFT | DT_WORDBREAK | DT_EDITCONTROL | DT_NOPREFIX, &dp)) break;   //  EDITCONTROL = 칸 밖 줄은 처리 안 함 → 첫 줄 길이만
+        size_t used = dp.uiLengthDrawn;
+        if (used == 0 || a + used > n) used = n - a;   //  이상하면 남은 것 전부 (무한 반복 방지)
+        if (used > n - a) used = n - a;
+        //  이 줄에 그릴 글 = [a, a+used) 에서 줄 끝 \r\n 은 빼고 (DrawText 도 안 그림)
+        size_t len = used;
+        while (len && (seg[len - 1] == L'\n' || seg[len - 1] == L'\r' || is_space(seg[len - 1]))) len--;   //  줄 끝 띄어쓰기도 (가운데 정렬이 DrawText 와 같게)
+        e->ls[nl * 2] = (int)a;
+        e->ls[nl * 2 + 1] = (int)len;
+        nl++;
+        a += used;
+        if (used == 0) break;
+    }
+    //  긴 영어 단어를 칸 너비에서 자른 줄이 있으면(EDITCONTROL 만 하는 일) 예전 DrawText 와 달라진다 → 이 글은 예전 방식으로
+    e->exact = 1;
+    for (int i = 0; i + 1 < nl; i++) {
+        size_t at = (size_t)e->ls[(i + 1) * 2];
+        if (!at || at >= n) continue;
+        wchar_t c1 = ws[at - 1], c2 = ws[at];
+        if (!is_space(c1) && !is_space(c2) && c1 != L'\n' && c1 != L'\r' && !is_cjk(c1) && !is_cjk(c2)) { e->exact = 0; break; }
+    }
+    if (!e->exact) {
+        RECT r = { 0, 0, w, 100000 };
+        DrawTextW(mdc, ws, -1, &r, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX);
+        e->h = r.bottom;
+    } else e->h = nl * e->lh;
+    SelectObject(mdc, mo);
+    e->nlines = nl;
+    return e;
+}
+//  여러 줄 글 높이 (DrawText DT_CALCRECT|DT_WORDBREAK 대신)
+int cv_text_h(canvas *c, HFONT f, const char *s, int w) {
+    if (!s || !*s) return 0;
+    wchar_t *ws = utf8_to_w(s, strlen(s));
+    if (!ws) return 0;
+    HFONT o = (HFONT)SelectObject(c->dc, f);
+    const wrapent *e = wrap_get(c, ws, w);
+    int h = e ? e->h : 0;
+    if (!e) { RECT r = { 0, 0, w, 10000 }; DrawTextW(c->dc, ws, -1, &r, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX); h = r.bottom; }
+    SelectObject(c->dc, o);
+    free(ws);
+    return h;
+}
 
 void cv_text(canvas *c, HFONT f, const char *s, int x, int y, int w, int h, uint32_t rgb, UINT fmt) {
     if (!s || !*s) return;
@@ -117,7 +245,16 @@ void cv_text(canvas *c, HFONT f, const char *s, int x, int y, int w, int h, uint
     HFONT o = (HFONT)SelectObject(c->dc, f);
     SetTextColor(c->dc, RGB((rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255));
     RECT r = { x, y, x + w, y + h };
-    DrawTextW(c->dc, ws, -1, &r, fmt | DT_NOPREFIX);
+    const wrapent *e = (fmt & DT_WORDBREAK) && !(fmt & (DT_SINGLELINE | DT_CALCRECT)) ? wrap_get(c, ws, w) : NULL;
+    if (e && e->exact) {   //  여러 줄: 위에서부터 한 줄씩 (DrawText 여러 줄과 같게 DT_VCENTER 는 안 씀), 칸 밖은 잘린다
+        UINT lf = (fmt & (DT_CENTER | DT_RIGHT)) | DT_SINGLELINE | DT_NOPREFIX;
+        for (int i = 0; i < e->nlines; i++) {
+            RECT lr = { x, y + i * e->lh, x + w, y + (i + 1) * e->lh };
+            if (lr.top >= r.bottom) break;
+            if (lr.bottom > r.bottom) lr.bottom = r.bottom;
+            if (e->ls[i * 2 + 1] > 0) DrawTextW(c->dc, e->s + e->ls[i * 2], e->ls[i * 2 + 1], &lr, lf);
+        }
+    } else DrawTextW(c->dc, ws, -1, &r, fmt | DT_NOPREFIX);
     SelectObject(c->dc, o);
     free(ws);
 }

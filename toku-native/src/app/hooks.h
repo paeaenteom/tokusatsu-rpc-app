@@ -7,6 +7,7 @@
 #include "../base/json.h"
 
 typedef struct { char id[16]; char *title, *name; char label[16]; } hk_item;
+void hk_cache_hold(int on);            // 1 = 그리는 동안 secrets.json 바뀜 확인을 한 번만 (끝나면 0)
 int hk_list(hk_item **out);            // 화면용 목록 (넣은 순서) — hk_list_free
 void hk_list_free(hk_item *l, int n);
 int hk_has_default(void);
@@ -27,6 +28,7 @@ const char *hk_char_add(const char *title, const jval *name, char id_out[16]);
 const char *hk_char_rename(const char *title, const char *id, const jval *name);
 const char *hk_char_remove(const char *title, const char *id);
 const char *hk_char_toggle(const char *title, const char *id, int on);
+const char *hk_char_set_all(const char *title, int mode, int *on, int *n);   // 0 모두 끄기 · 1 모두 켜기 · 2 무작위(캐릭터마다 동전 던지기) — on/n = 켜진 수/전체
 const char *hk_char_avatar_url(const char *title, const char *id, const jval *url);
 const char *hk_char_set_avatar(const char *title, const char *id, const char *url, double until);
 jval *hk_char_get(const char *title, const char *id);   // 시험 보내기·조절 창용 복사 (json_free) — 없으면 NULL

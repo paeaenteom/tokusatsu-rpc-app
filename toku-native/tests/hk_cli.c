@@ -20,7 +20,7 @@ int wmain(int argc, wchar_t **argv) {
     if (argc < 2) return 2;
     int copied;
     settings_init(argv[1], L"hktest", &copied);
-    hk_random = rnd;
+    if (!getenv("HK_REAL_RNG")) hk_random = rnd;   //  HK_REAL_RNG = 진짜 시스템 난수 (무작위 분포 시험)
     static char line[1 << 21];
     while (fgets(line, sizeof line, stdin)) {
         jval *m = json_parse(line, strlen(line), NULL);
@@ -37,6 +37,7 @@ int wmain(int argc, wchar_t **argv) {
         else if (!strcmp(op, "charRename")) r = hk_char_rename(title, id, json_get(m, "name"));
         else if (!strcmp(op, "charRemove")) r = hk_char_remove(title, id);
         else if (!strcmp(op, "charToggle")) r = hk_char_toggle(title, id, json_get_bool(m, "on", 0));
+        else if (!strcmp(op, "charAll")) { int on2, n2; r = hk_char_set_all(title, (int)json_get_num(m, "mode", -1), &on2, &n2); }
         else if (!strcmp(op, "charUrl")) r = hk_char_avatar_url(title, id, json_get(m, "url"));
         else if (!strcmp(op, "folders")) {   //  설정에 쓰레기 값 직접 넣기
             const jval *f = json_get(m, "v");

@@ -14,7 +14,9 @@
 #include "app.h"
 #include "canvas.h"
 #include "img.h"
+#include <shlobj.h>
 #include "hooks.h"
+#include "hksearch.h"
 #include "bg.h"
 #include "imgutil.h"
 #include "../net/http.h"
@@ -68,7 +70,11 @@ static HINSTANCE INST;
 static canvas CV;
 static float S = 1;
 static int tab, hover, press;
-static int scroll_[7], content_h[7], view_h;
+static int scroll_[7], content_h[7], view_h, view_top;
+//  화면(스크롤 영역)에 보이는 줄인지 — 그림은 보이는 것만 요청한다 (위아래 조금 여유)
+//  11/14 버그: 웹훅 폴더 113개 아이콘을 매번 다 요청해 그림 칸(img.c)이 계속 밀려나 아이콘이 안 나옴
+static int in_view(int y, int h);
+
 static HFONT f_body, f_bold, f_small, f_tab, f_mono, f_brand, f_title, f_initial, f_icon, f_bf12b, f_bf14b, f_bf13b, f_bf13;
 static int caption_h = 52;   // 머리줄 높이 (그릴 때 적어 둠 — 끌기 영역)
 static HICON icon_small;
@@ -601,16 +607,7 @@ static int kb_looks_fs(const jval *b) {
 
 static int fe_active(const char *key);
 static void fe_mark(int x, int y, int w, int h);
-static int text_h(HFONT f, const char *s, int w) {
-    wchar_t *ws = utf8_to_w(s, strlen(s));
-    if (!ws) return D(20);
-    HFONT o = (HFONT)SelectObject(CV.dc, f);
-    RECT r = { 0, 0, w, 10000 };
-    DrawTextW(CV.dc, ws, -1, &r, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX);
-    SelectObject(CV.dc, o);
-    free(ws);
-    return r.bottom;
-}
+static int text_h(HFONT f, const char *s, int w) { return cv_text_h(&CV, f, s, w); }   //  줄 나눔은 canvas 가 기억 (11/14)
 static int kb_btn(int id, int x, int y, int h, const char *label, uint32_t fg, int disabled) {
     int w = cv_text_w(&CV, f_small, label) + D(22);
     uint32_t bg = disabled ? C_FIELD : hover == id ? C_FIELD_HI : C_FIELD;
@@ -754,6 +751,9 @@ static struct { HWND h; WNDPROC old; char key[160]; char *initial; int cancel, e
 static RECT FE_RECT;
 static HBRUSH FE_BRUSH;
 static int fe_active(const char *key) { return FE.h && !strcmp(FE.key, key); }
+static HDC FE_TEST_DC;   //  시험: 창을 안 띄운 채 자리 계산용으로 그릴 메모리 DC
+static void paint(HDC hdc);
+static void fe_layout_paint(void) { if (FE_TEST_DC) paint(FE_TEST_DC); else RedrawWindow(W, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW); }
 static void fe_mark(int x, int y, int w, int h) { FE_RECT.left = x; FE_RECT.top = y; FE_RECT.right = x + w; FE_RECT.bottom = y + h; }
 
 static LRESULT CALLBACK fe_proc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
@@ -810,7 +810,7 @@ static void fe_start(const char *key, const char *text, int maxlen, int password
     wchar_t *wl = utf8_to_w(text ? text : "", strlen(text ? text : ""));
     if (wl) { SetWindowTextW(FE.h, wl); free(wl); }
     FE_RECT.right = 0;
-    RedrawWindow(W, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
+    fe_layout_paint();
     if (FE_RECT.right > FE_RECT.left) {
         int pad = D(9), eh = D(18);
         MoveWindow(FE.h, FE_RECT.left + pad, FE_RECT.top + (FE_RECT.bottom - FE_RECT.top - eh) / 2, FE_RECT.right - FE_RECT.left - 2 * pad, eh, TRUE);
@@ -822,6 +822,17 @@ static void fe_start(const char *key, const char *text, int maxlen, int password
 static void fe_start_live(const char *key, const char *text, int maxlen, fe_fn fn, fe_live_fn live) {
     fe_start(key, text, maxlen, 0, fn);
     if (FE.h) FE.live = live;   //  처음 넣은 글로는 부르지 않는다
+}
+//  글이 바뀌어 칸 자리·넓이가 달라졌으면 입력 창도 옮긴다 (검색어가 생기면 '지우기' 버튼만큼 칸이 좁아짐)
+static void fe_relayout(void) {
+    if (!FE.h) return;
+    RECT old = FE_RECT;
+    FE_RECT.right = 0;
+    fe_layout_paint();
+    if (FE_RECT.right <= FE_RECT.left) { FE_RECT = old; return; }   //  칸이 안 그려졌으면 그대로
+    if (!memcmp(&old, &FE_RECT, sizeof old)) return;
+    int pad = D(9), eh = D(18);
+    MoveWindow(FE.h, FE_RECT.left + pad, FE_RECT.top + (FE_RECT.bottom - FE_RECT.top - eh) / 2, FE_RECT.right - FE_RECT.left - 2 * pad, eh, TRUE);
 }
 //  칸 그리기 — 지금 쓰는 칸이면 자리만 적어 둔다 (진짜 입력 칸이 그 위에 있다)
 static void w_field(int id, const char *key, int x, int y, int w, int h, const char *text, const char *ph, int password, uint32_t fg) {
@@ -1033,7 +1044,7 @@ static void kb_click(int id) {
 //  클릭할 곳은 그릴 때마다 표(HKA)에 적고 id = ID_HK0 + 표 번호
 #define ID_HK0 50000
 enum { HA_F_TITLE = 1, HA_F_URL, HA_F_NAME, HA_ADD, HA_FOLDER, HA_ICON, HA_ICONCLR, HA_ADDHERE, HA_H_NAME, HA_H_TEST, HA_H_DEL,
-       HA_C_SW, HA_C_FACE, HA_C_NAME, HA_C_URL, HA_C_PICK, HA_C_TEST, HA_C_DEL, HA_CA_NAME, HA_CA_ADD,
+       HA_C_SW, HA_C_FACE, HA_C_NAME, HA_C_URL, HA_C_PICK, HA_C_TEST, HA_C_DEL, HA_CA_NAME, HA_CA_ADD, HA_C_ALL, HA_SEARCH, HA_SEARCH_CLR,
        HA_AV_STAGE, HA_AV_ZOOM, HA_AV_RESET, HA_AV_OTHER, HA_AV_APPLY, HA_AV_CANCEL, HA_AV_BG };
 typedef struct { int kind; char *title; char id[32]; char *text; int n; } hk_act;
 static hk_act *HKA;
@@ -1051,6 +1062,10 @@ static int hka(int kind, const char *title, const char *id, const char *text, in
 }
 
 static char *HD_TITLE, *HD_URL, *HD_NAME;                    // 추가 칸에 쓰던 글 (저장 전)
+static char *HK_Q;                                           // 폴더 검색어 (2026-11-13)
+static int HK_IMG_REQ, HK_IMG_DRAWN;                          // 웹훅 탭 한 번 그릴 때 요청한·그린 폴더 아이콘 수 (시험 로그)
+static int HK_SHOWN, HK_TOTAL;                                // 마지막으로 그린 검색 결과 (시험 로그)
+static int HK_SEARCH_OFF = -1;                               // 검색 칸의 내용 안 위치 (누르면 그 줄을 맨 위로)
 static struct { char *title, *text; } HD_CADD[64];           // 폴더별 '캐릭터 추가' 칸
 static int nHD_CADD;
 static char *HK_OPEN[64];                                     // 펼친 폴더 (작품명)
@@ -1427,6 +1442,13 @@ static void hk_do_add(void) {
         hk_gsay(T(S_hookAdded), 1);
     } else hk_gsay(hk_err(e, S_hookErrUrl), 2);
 }
+//  검색 칸 — 칠 때마다 바로 거른다. 누르면 그 줄이 맨 위로 (아래 목록을 스크롤 없이)
+static void hk_search_live(const char *key, const char *text) { (void)key; set_str(&HK_Q, text); }
+static void hk_search_done(const char *key, const char *text, int enter, int changed) { (void)key; (void)enter; (void)changed; set_str(&HK_Q, text); }
+static void hk_search_start(void) {
+    if (HK_SEARCH_OFF >= 0) { int s2 = D(22) + HK_SEARCH_OFF - D(8); scroll_[5] = s2 > 0 ? s2 : 0; }
+    fe_start_live("hks:q", str0(HK_Q), 100, hk_search_done, hk_search_live);
+}
 static void hk_draft_done(const char *key, const char *text, int enter, int changed) {
     (void)changed;
     if (!strcmp(key, "hkf:title")) set_str(&HD_TITLE, text);
@@ -1496,6 +1518,7 @@ static int hk_char_rows_h(const hk_char *cs, int n) {
 static int page_hook(int x, int y, int w) {
     if (w > D(900)) w = D(900);
     hka_reset();
+    HK_IMG_REQ = HK_IMG_DRAWN = 0;
     int yy = y;
     section_title(x, yy, w, T(S_hookTitle));
     yy += D(28);
@@ -1539,12 +1562,39 @@ static int page_hook(int x, int y, int w) {
         hk_list_free(l, n);
         return yy - y + D(6);
     }
+    //  검색 칸 — 작품명·캐릭터 이름, 한글 발음으로도 (히비키 → 仮面ライダー響鬼)
+    const char *hq = str0(HK_Q);
+    int searching = *hq != 0, sy = yy, shown = 0, total = 0;
+    HK_SEARCH_OFF = sy - y;
+    {
+        int cw2 = searching ? cv_text_w(&CV, f_small, T(S_NA_hookSearchClear)) + D(22) : 0;
+        int fw2 = w - (cw2 ? cw2 + D(8) : 0);
+        w_field(hka(HA_SEARCH, NULL, NULL, NULL, 0), "hks:q", x, yy, fw2, D(36), hq, T(S_NA_hookSearchPh), 0, C_TEXT);
+        if (cw2) kb_btn(hka(HA_SEARCH_CLR, NULL, NULL, NULL, 0), x + w - cw2, yy + D(3), D(30), T(S_NA_hookSearchClear), C_TEXT2, 0);
+        yy += D(48);
+    }
     //  작품명별 폴더 (넣은 순서)
     for (int gi = 0; gi < n; gi++) {
         int seen = 0;
         for (int k = 0; k < gi; k++) if (!strcmp(l[k].title, l[gi].title)) seen = 1;
         if (seen) continue;
         const char *title = l[gi].title;
+        total++;
+        if (searching) {   //  제목 + 캐릭터 이름 중 하나라도 맞으면
+            hk_char *sc = NULL;
+            int sn = hk_chars(title, &sc);
+            const char **hay = (const char **)calloc((size_t)sn + 1, sizeof *hay);
+            int found = 1;
+            if (hay) {
+                hay[0] = title;
+                for (int k = 0; k < sn; k++) hay[k + 1] = str0(sc[k].name);
+                found = hks_match(hq, hay, sn + 1);
+                free(hay);
+            }
+            hk_chars_free(sc, sn);
+            if (!found) continue;
+        }
+        shown++;
         int cnt = 0;
         for (int k = gi; k < n; k++) cnt += !strcmp(l[k].title, title);
         int open = hk_is_open(title);
@@ -1560,6 +1610,11 @@ static int page_hook(int x, int y, int w) {
             snprintf(mk, sizeof mk, "cadd:%s", title);
             fh += D(52) + (hk_msg(mk, &cls) ? D(20) : 0) + D(8);
         }
+        if (!in_view(yy, fh)) {   //  화면 밖 폴더는 높이만 세고 안 그린다 (11/14 렉)
+            hk_chars_free(cs, nc);
+            yy += fh + D(14);
+            continue;
+        }
         card(x, yy, w, fh);
         //  머리 (누르면 펼치기·접기)
         int hid = hka(HA_FOLDER, title, NULL, NULL, 0);
@@ -1568,7 +1623,8 @@ static int page_hook(int x, int y, int w) {
         const char *ic = hk_icon(title);
         const uint32_t *ipx = NULL;
         int isz = D(32), ix = x + D(16), iy = yy + (D(56) - isz) / 2;
-        if (ic && img_get(ic, &ipx) == 1 && ipx) cv_image(&CV, ipx, IMG_SIZE, (float)ix, (float)iy, (float)isz, (float)D(8));
+        int ig = (ic && in_view(iy, isz)) ? (HK_IMG_REQ++, img_get(ic, &ipx)) : -1;
+        if (ig == 1 && ipx) { HK_IMG_DRAWN++; cv_image(&CV, ipx, IMG_SIZE, (float)ix, (float)iy, (float)isz, (float)D(8)); }
         else {
             char fl[8];
             first_letter(fl, title);
@@ -1635,7 +1691,25 @@ static int page_hook(int x, int y, int w) {
                 fill(t2, sizeof t2, t1, "{all}", a2);
                 cv_text(&CV, f_small, t2, x + D(20) + hw + D(8), by + D(12), D(200), D(20), C_AMBER, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
             }
-            cv_text(&CV, f_small, T(S_hookCharsHint), x + D(20), by + D(34), w - D(40), D(20), C_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+            //  모두 켜기 · 모두 끄기 · 무작위 (캐릭터가 있을 때만) — 오른쪽 끝부터
+            if (nc) {
+                static const int AL[3] = { S_NA_hookCharAllRandom, S_NA_hookCharAllOff, S_NA_hookCharAllOn };
+                static const int AM[3] = { 2, 0, 1 };
+                int bx3 = x + w - D(20);
+                for (int q = 0; q < 3; q++) {
+                    int bw3 = cv_text_w(&CV, f_small, T(AL[q])) + D(22);
+                    bx3 -= bw3;
+                    kb_btn(hka(HA_C_ALL, title, "", NULL, AM[q]), bx3, by + D(7), D(30), T(AL[q]), q == 0 ? C_ACCHI : C_TEXT2, 0);
+                    bx3 -= D(8);
+                }
+            }
+            {
+                char gk[512];
+                int gc = 0;
+                snprintf(gk, sizeof gk, "ca:%s", title);
+                const char *gm = hk_msg(gk, &gc);
+                cv_text(&CV, f_small, gm ? gm : T(S_hookCharsHint), x + D(20), by + D(34), w - D(40), D(20), gm ? cls_color(gc) : C_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+            }
             by += D(64);
             for (int k = 0; k < nc; k++) {
                 const hk_char *c = &cs[k];
@@ -1648,7 +1722,8 @@ static int page_hook(int x, int y, int w) {
                 int fx2 = x + D(20) + D(46) + D(10), fsz = D(34);
                 int fid = hka(HA_C_FACE, title, c->id, c->avatar, 0);
                 const uint32_t *apx = NULL;
-                if (!strncmp(c->avatar, "https://", 8) && img_get(c->avatar, &apx) == 1 && apx) cv_image(&CV, apx, IMG_SIZE, (float)fx2, (float)cy + 3, (float)fsz, fsz / 2.0f);
+                int ag = (!strncmp(c->avatar, "https://", 8) && in_view(cy + 3, fsz)) ? img_get(c->avatar, &apx) : -1;
+                if (ag == 1 && apx) { cv_image(&CV, apx, IMG_SIZE, (float)fx2, (float)cy + 3, (float)fsz, fsz / 2.0f); }
                 else {
                     char fl[8];
                     first_letter(fl, c->name);
@@ -1709,7 +1784,30 @@ static int page_hook(int x, int y, int w) {
         yy += fh + D(14);
     }
     hk_list_free(l, n);
-    return yy - y + D(6);
+    if (searching) {   //  맞는 폴더 수 · 없으면 안내
+        char a1[16], a2[16], t1[200], t2[200];
+        snprintf(a1, sizeof a1, "%d", shown);
+        snprintf(a2, sizeof a2, "%d", total);
+        if (shown) {
+            fill(t1, sizeof t1, T(S_NA_hookSearchCount), "{n}", a1);
+            fill(t2, sizeof t2, t1, "{all}", a2);
+            cv_text(&CV, f_small, t2, x, yy - D(6), w, D(20), C_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+            yy += D(20);
+        } else {
+            char qs[160];
+            snprintf(qs, sizeof qs, "%s", hq);
+            fill(t1, sizeof t1, T(S_NA_hookSearchNone), "{q}", qs);
+            card(x, yy, w, D(70));
+            cv_text(&CV, f_small, t1, x + D(20), yy, w - D(40), D(70), C_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+            yy += D(70) + D(14);
+        }
+    }
+    HK_SHOWN = shown;
+    HK_TOTAL = total;
+    int used = yy - y + D(6);
+    //  찾는 동안은 검색 칸을 맨 위에 둘 만큼 높이를 남긴다 (목록이 줄어도 칸이 제자리 — 입력 칸이 안 어긋나게)
+    if ((searching || fe_active("hks:q")) && used < (sy - y) + view_h) used = (sy - y) + view_h;
+    return used;
 }
 
 static void hk_click(int idn) {
@@ -1723,6 +1821,12 @@ static void hk_click(int idn) {
     int nval = a.n;
     switch (a.kind) {
     case HA_F_TITLE: fe_start("hkf:title", str0(HD_TITLE), 100, 0, hk_draft_done); break;
+    case HA_SEARCH: hk_search_start(); break;
+    case HA_SEARCH_CLR:
+        fe_finish();
+        free(HK_Q);
+        HK_Q = NULL;
+        break;
     case HA_F_URL: fe_start("hkf:url", str0(HD_URL), 0, 1, hk_draft_done); break;
     case HA_F_NAME: fe_start("hkf:name", str0(HD_NAME), 40, 0, hk_draft_done); break;
     case HA_ADD: hk_do_add(); break;
@@ -1772,6 +1876,20 @@ static void hk_click(int idn) {
         HK_ARMED.key[0] = 0;
         { const char *e = hk_remove(id); hk_unsay(id); hk_gsay(e ? hk_err(e, S_hookErrFile) : T(S_hookRemoved), e ? 2 : 1); }
         break;
+    case HA_C_ALL: {   //  모두 켜기 · 모두 끄기 · 무작위 — 결과는 머리줄 아래 안내 자리에 '켜진 캐릭터 n/전체'
+        char gk[512], m[200], a1[16], a2[16];
+        snprintf(gk, sizeof gk, "ca:%s", title);
+        int on = 0, all = 0;
+        const char *e = hk_char_set_all(title, nval, &on, &all);
+        if (e) { hk_say(gk, hk_err(e, S_hookErrFile), 2); break; }
+        snprintf(a1, sizeof a1, "%d", on);
+        snprintf(a2, sizeof a2, "%d", all);
+        fill(m, sizeof m, T(S_NA_hookCharAllDone), "{on}", a1);
+        char m2[200];
+        fill(m2, sizeof m2, m, "{all}", a2);
+        hk_say(gk, m2, on ? 1 : 0);
+        break;
+    }
     case HA_C_SW: {
         char mk[64];
         snprintf(mk, sizeof mk, "c:%s", id);
@@ -2866,6 +2984,15 @@ static void status_of(const char **hdr, const char **foot, uint32_t *dot) {
     else { *hdr = T(S_hdrOk); *foot = T(S_stOk); *dot = C_GREEN; }
 }
 
+//  그림 디스크 캐시 = %APPDATA%\<앱 폴더>\img-cache (시험 모드면 시험 폴더)
+static void img_cache_setup(void) {
+    wchar_t ad[MAX_PATH], d[MAX_PATH];
+    if (SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, ad) != S_OK) return;
+    _snwprintf(d, MAX_PATH - 1, L"%ls\\%ls\\img-cache", ad, app_data_dir());
+    d[MAX_PATH - 1] = 0;
+    img_set_cache_dir(d);
+}
+static int in_view(int y, int h) { int m = D(120); return y + h > view_top - m && y < view_top + view_h + m; }
 static void paint(HDC hdc) {
     RECT rc;
     GetClientRect(W, &rc);
@@ -2933,6 +3060,7 @@ static void paint(HDC hdc) {
     //  내용 (스크롤)
     int top = ty + th, bottom = h - fh;
     view_h = bottom - top;
+    view_top = top;
     cv_clip(&CV, 0, top, w, view_h);
     int pad = D(22);
     int y0 = top + pad - scroll_[tab];
@@ -2944,7 +3072,7 @@ static void paint(HDC hdc) {
     case 2: used = page_app(pad, y0, cw); break;
     case 3: used = page_keys(pad, y0, cw); break;
     case 4: used = page_bg(pad, y0, cw); break;
-    case 5: used = page_hook(pad, y0, cw); break;
+    case 5: hk_cache_hold(1); used = page_hook(pad, y0, cw); hk_cache_hold(0); break;   //  그리는 동안 secrets.json 확인은 한 번
     case 6: used = page_backfill(pad, y0, cw); break;
     default: used = page_soon(pad, y0, cw > D(620) ? D(620) : cw); break;
     }
@@ -3085,7 +3213,7 @@ static LRESULT CALLBACK proc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
                 free(u);
                 free(buf);
             }
-            InvalidateRect(h, NULL, FALSE);
+            fe_relayout();
             return 0;
         }
         break;
@@ -3213,6 +3341,7 @@ static LRESULT CALLBACK proc(HWND h, UINT m, WPARAM wp, LPARAM lp) {
         if (av_key((UINT)wp)) return 0;   //  프로필 사진 조절 창
         if (m == WM_KEYDOWN && bg_key((UINT)wp)) return 0;   //  배경 미리보기 방향키
         if (kb_key((UINT)wp, lp)) return 0;
+        if (m == WM_KEYDOWN && tab == 5 && wp == 'F' && (GetKeyState(VK_CONTROL) & 0x8000) && HK_SEARCH_OFF >= 0) { hk_search_start(); return 0; }   //  Ctrl+F = 웹훅 검색
         break;
     case WM_SYSKEYUP:
     case WM_SYSCHAR:
@@ -3322,6 +3451,7 @@ void win_show(void) {
         S = GetDpiForWindow(W) / 96.0f;
         make_fonts();
         SetWindowPos(W, NULL, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);   // 제목 줄 없앤 크기로 다시 계산
+        img_cache_setup();
         img_init(W, WM_IMG);
         ImmAssociateContextEx(W, NULL, 0);   // 이 창은 글을 받지 않는다 — 한글 입력기가 키 받기를 가로채지 않게 (이름 칸은 따로)
         //  다크 제목 줄 + 제목 줄 색을 앱 머리줄 색으로 (Windows 11)
@@ -3376,6 +3506,7 @@ int win_snapshot(const wchar_t *dir) {
     float keep_s = S;
     HDC sdc = CreateCompatibleDC(NULL);   // 메모리 DC — 화면에는 아무것도 안 그린다
     //  카드 그림을 먼저 요청하고 (최대 15초) 다 받을 때까지 기다린다
+    img_cache_setup();
     img_init(NULL, 0);
     S = 1;
     make_fonts();
@@ -3415,6 +3546,39 @@ int win_snapshot(const wchar_t *dir) {
                     av_close();
                 }
             }
+            if (t == 5) {   //  그림: 보이는 것만 요청 → 다 받으면 요청한 만큼 그려져야 (11/14 아이콘 안 나옴 버그)
+                for (int r = 0; r < 50 && img_pending(); r++) { Sleep(100); paint(sdc); }
+                paint(sdc);
+                char lm[120];
+                snprintf(lm, sizeof lm, "[Test] hook icon req=%d drawn=%d", HK_IMG_REQ, HK_IMG_DRAWN);
+                app_log(0, lm);
+                //  그리기 시간 (11/14 렉): 다 펼친 채 · 다 접은 채 20번씩 평균
+                LARGE_INTEGER q0, q1, qf;
+                QueryPerformanceFrequency(&qf);
+                double ms[2];
+                hk_item *pl; int pn = hk_list(&pl);
+                for (int mode = 0; mode < 2; mode++) {
+                    if (mode == 1) for (int q = 0; q < pn; q++) hk_set_open(pl[q].title, 0);
+                    paint(sdc);
+                    QueryPerformanceCounter(&q0);
+                    for (int r = 0; r < 20; r++) paint(sdc);
+                    QueryPerformanceCounter(&q1);
+                    ms[mode] = (q1.QuadPart - q0.QuadPart) * 1000.0 / qf.QuadPart / 20;
+                }
+                for (int q = 0; q < pn; q++) hk_set_open(pl[q].title, 1);
+                hk_list_free(pl, pn);
+                double base = 0;   //  비교: 앱 설정 탭 (웹훅 목록 없음)
+                tab = 2;
+                paint(sdc);
+                QueryPerformanceCounter(&q0);
+                for (int r = 0; r < 20; r++) paint(sdc);
+                QueryPerformanceCounter(&q1);
+                base = (q1.QuadPart - q0.QuadPart) * 1000.0 / qf.QuadPart / 20;
+                tab = 5;
+                paint(sdc);
+                snprintf(lm, sizeof lm, "[Test] hook paint open=%.2fms closed=%.2fms base(tab2)=%.2fms", ms[0], ms[1], base);
+                app_log(0, lm);
+            }
             if (t == 5) {   //  웹훅 탭은 맨 아래까지 내린 그림도 (캐릭터 칸)
                 scroll_[5] = 100000;
                 paint(sdc);
@@ -3423,6 +3587,42 @@ int win_snapshot(const wchar_t *dir) {
                 f[MAX_PATH - 1] = 0;
                 save_bmp(f);
                 scroll_[5] = 0;
+                //  검색: 맞는 것 하나(포제 = フォーゼ) · 맞는 것 없음
+                static const char *QS[2] = { "\xED\x8F\xAC\xEC\xA0\x9C", "zzqq" };
+                for (int qi = 0; qi < 2; qi++) {
+                    set_str(&HK_Q, QS[qi]);
+                    paint(sdc);
+                    paint(sdc);
+                    _snwprintf(f, MAX_PATH - 1, L"%ls\\tab5q%d@%d.bmp", dir, qi, (int)(S * 100));
+                    f[MAX_PATH - 1] = 0;
+                    save_bmp(f);
+                    char lm[120];
+                    snprintf(lm, sizeof lm, "[Test] hook search %d: %d/%d", qi, HK_SHOWN, HK_TOTAL);
+                    app_log(0, lm);
+                }
+                free(HK_Q);
+                HK_Q = NULL;
+                //  검색 칸을 연 채 글을 치면 '지우기' 버튼만큼 칸이 좁아진다 → 입력 창도 따라 좁아져야 (11/13 버그)
+                FE_TEST_DC = sdc;
+                hk_search_start();
+                if (FE.h) {
+                    RECT e0, e1;
+                    GetWindowRect(FE.h, &e0);
+                    MapWindowPoints(NULL, W, (POINT *)&e0, 2);
+                    RECT f0 = FE_RECT;
+                    SetWindowTextW(FE.h, L"dasdasdD");   //  EN_CHANGE → 바로 거르기 + 자리 다시
+                    GetWindowRect(FE.h, &e1);
+                    MapWindowPoints(NULL, W, (POINT *)&e1, 2);
+                    char lm[200];
+                    snprintf(lm, sizeof lm, "[Test] hook search edit: field %ld-%ld edit %ld-%ld -> field %ld-%ld edit %ld-%ld q=%s",
+                             f0.left, f0.right, e0.left, e0.right, FE_RECT.left, FE_RECT.right, e1.left, e1.right, str0(HK_Q));
+                    app_log(0, lm);
+                    FE.cancel = 1;
+                    fe_finish();
+                } else app_log(0, "[Test] hook search edit: no edit");
+                FE_TEST_DC = NULL;
+                free(HK_Q);
+                HK_Q = NULL;
             }
         }
     }

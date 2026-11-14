@@ -44,11 +44,10 @@ const srv = net.createServer((sock) => {
   app.on('exit', (code) => { exited = code; });
 
   console.log('=== 시작 ===');
-  const sock = await (async () => { for (let k = 0; k < 100; k++) { const s = await new Promise((r) => { const w = new WebSocket('ws://127.0.0.1:' + PORT, { origin: 'chrome-extension://dciaobllfdcegjcdmimclgglapnhggjm' }); w.on('open', () => r(w)); w.on('error', () => r(null)); }); if (s) return s; await wait(100); } return null; })();
+  const sock = await (async () => { for (let k = 0; k < 100; k++) { const s = await new Promise((r) => { const w = new WebSocket('ws://127.0.0.1:' + PORT, { origin: 'chrome-extension://dciaobllfdcegjcdmimclgglapnhggjm' }); w.got = []; w.on('message', (d) => w.got.push(JSON.parse(d.toString()))); w.on('open', () => r(w)); w.on('error', () => r(null)); }); if (s) return s; await wait(100); } return null; })();
   ok('포트 17698 에 확장이 붙음', !!sock);
   if (!sock) { console.log('중단'); process.exit(1); }
-  const got = [];
-  sock.on('message', (d) => got.push(JSON.parse(d.toString())));
+  const got = sock.got;   //  연결과 동시에 듣는다 — 앱이 바로 보내는 CONNECTED 를 놓치지 않게 (11/14)
   ok('CONNECTED (lang·booster·level) 받음', await until(() => got.some((m) => m.type === 'CONNECTED' && typeof m.lang === 'string' && typeof m.level === 'string')), got[0]);
   ok('KEYBINDS 받음 (기존 앱 설정에서)', await until(() => got.some((m) => m.type === 'KEYBINDS' && typeof m.keybinds === 'object')));
   ok('포트를 잡은 뒤 가짜 Discord 에 붙음 (TTFC 클라이언트)', await until(() => conns.length >= 1 && conns[0].frames.length >= 1));
